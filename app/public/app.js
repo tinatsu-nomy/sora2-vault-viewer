@@ -590,12 +590,19 @@ for (const chip of els.navChips) {
   });
 }
 
-for (const checkbox of [els.localOnly, els.withText, els.withMedia, els.showCameo]) {
+for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
   checkbox.addEventListener("change", async () => {
     resetPagination();
     await refresh();
   });
 }
+
+els.showCameo.addEventListener("change", async () => {
+  syncFiltersFromForm();
+  renderList();
+  renderPagination();
+  await renderDetail();
+});
 
 els.rebuildButton.addEventListener("click", async () => {
   setRebuildState(true, "Scanning manifests and local files...");
