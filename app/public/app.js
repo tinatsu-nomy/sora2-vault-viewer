@@ -36,6 +36,7 @@ const els = {
   rebuildButton: document.querySelector("#rebuildButton"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
   rebuildModal: document.querySelector("#rebuildModal"),
+  rebuildModalTitle: document.querySelector("#rebuildModalTitle"),
   rebuildModalMessage: document.querySelector("#rebuildModalMessage"),
   rebuildModalOk: document.querySelector("#rebuildModalOk"),
   list: document.querySelector("#list"),
@@ -47,6 +48,8 @@ const els = {
 };
 
 let mediaObserver = null;
+let detailRequestToken = 0;
+let indexRequestToken = 0;
 
 const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
@@ -110,8 +113,45 @@ function buildQueryString() {
 }
 
 async function fetchIndex() {
+  const requestToken = ++indexRequestToken;
   const response = await fetch(`/api/index?${buildQueryString()}`);
   const payload = await response.json();
+  if (requestToken !== indexRequestToken) {
+    return;
+  }
+
+  if (!response.ok) {
+    const message = payload?.details ? `${payload.error || "Failed to load index"}: ${payload.details}` : payload?.error || "Failed to load index";
+    state.items = [];
+    state.stats = null;
+    state.pagination = {
+      total: 0,
+      limit: state.pagination.limit,
+      offset: 0,
+      page: 0,
+      totalPages: 0,
+      hasPrevious: false,
+      hasNext: false,
+    };
+    state.selectedId = null;
+    els.stats.innerHTML = `
+      <article class="summary-card db-card">
+        <strong>Index Error</strong>
+        <div class="subtle">${escapeHtml(message)}</div>
+      </article>
+    `;
+    els.resultMeta.textContent = "Index unavailable";
+    els.list.innerHTML = `
+      <article class="empty-state">
+        <strong>Unable to load the viewer index</strong>
+        <div class="subtle">${escapeHtml(message)}</div>
+      </article>
+    `;
+    els.pagination.innerHTML = "";
+    els.detail.innerHTML = "Fix the manifest/index issue and try Refresh or Rescan again.";
+    return;
+  }
+
   state.items = payload.items;
   state.stats = payload.stats;
   state.pagination = payload.pagination || {
@@ -137,7 +177,12 @@ async function fetchIndex() {
 
 async function fetchDetail(id) {
   const response = await fetch(`/api/item/${encodeURIComponent(id)}`);
-  return response.json();
+  const payload = await response.json();
+  if (!response.ok) {
+    const message = payload?.details ? `${payload.error || "Failed to load details"}: ${payload.details}` : payload?.error || "Failed to load details";
+    throw new Error(message);
+  }
+  return payload;
 }
 
 function populateSourceFilter(sources) {
@@ -409,7 +454,26 @@ async function renderDetail() {
     return;
   }
 
-  const item = await fetchDetail(state.selectedId);
+  const selectedId = state.selectedId;
+  const requestToken = ++detailRequestToken;
+  let item;
+  try {
+    item = await fetchDetail(selectedId);
+  } catch (error) {
+    if (requestToken !== detailRequestToken || selectedId !== state.selectedId) {
+      return;
+    }
+    els.detail.innerHTML = `
+      <article class="detail-card">
+        <h3>Detail Error</h3>
+        <div class="subtle">${escapeHtml(error.message || "Unable to load the selected item.")}</div>
+      </article>
+    `;
+    return;
+  }
+  if (requestToken !== detailRequestToken || selectedId !== state.selectedId) {
+    return;
+  }
   const localMediaUrl = item.local?.mediaPath ? `/media?path=${encodeURIComponent(item.local.mediaPath)}` : null;
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
@@ -549,7 +613,8 @@ function setRebuildState(isBusy, message = "") {
   els.rebuildStatus.classList.toggle("busy", isBusy);
 }
 
-function showRebuildModal(message) {
+function showRebuildModal(title, message) {
+  els.rebuildModalTitle.textContent = title;
   els.rebuildModalMessage.textContent = message;
   els.rebuildModal.classList.remove("hidden");
   els.rebuildModal.setAttribute("aria-hidden", "false");
@@ -615,10 +680,20 @@ els.showCameo.addEventListener("change", async () => {
 els.rebuildButton.addEventListener("click", async () => {
   setRebuildState(true, "Scanning manifests and local files...");
   try {
-    await fetch("/api/rebuild", { method: "POST" });
+    const response = await fetch("/api/rebuild", { method: "POST" });
+    const payload = await response.json();
+    if (!response.ok) {
+      const message = payload?.details
+        ? `${payload.error || "Rescan failed"}: ${payload.details}`
+        : payload?.error || "Rescan failed";
+      throw new Error(message);
+    }
     await refresh();
     setRebuildState(false, "");
-    showRebuildModal("Manifest and local file scanning has finished.");
+    showRebuildModal("Rescan complete", "Manifest and local file scanning has finished.");
+  } catch (error) {
+    setRebuildState(false, "");
+    showRebuildModal("Rescan failed", error.message || "Manifest and local file scanning failed.");
   } finally {
     if (els.rebuildButton.disabled) {
       setRebuildState(false, "");

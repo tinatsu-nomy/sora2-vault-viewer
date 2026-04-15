@@ -1,6 +1,6 @@
 {
   "name": "sora2-vault-viewer",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "Local viewer for Sora 2 manifests and exported media/text data",
   "scripts": {

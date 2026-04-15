@@ -16,14 +16,6 @@ const PUBLIC_DIR = path.join(ROOT, "app", "public");
 const APP_DATA_DIR = path.join(ROOT, "app", "data");
 const DB_PATH = process.env.SORA_SQLITE_PATH || path.join(APP_DATA_DIR, "sora-index.sqlite");
 
-const MANIFEST_FILES = fs.existsSync(DATA_DIR)
-  ? fs
-      .readdirSync(DATA_DIR, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^soravault_manifest_.*\.json$/i.test(entry.name))
-      .map((entry) => path.join(DATA_DIR, entry.name))
-      .sort()
-  : [];
-
 const SOURCE_DIRS = {
   v2_drafts: path.join(DATA_DIR, "sora_v2_drafts"),
   v2_liked: path.join(DATA_DIR, "sora_v2_liked"),
@@ -43,6 +35,25 @@ let dbStatus = {
   savedItems: 0,
   error: null,
 };
+
+function listManifestFiles() {
+  if (!fs.existsSync(DATA_DIR)) return [];
+  return fs
+    .readdirSync(DATA_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^soravault_manifest_.*\.json$/i.test(entry.name))
+    .map((entry) => path.join(DATA_DIR, entry.name))
+    .sort();
+}
+
+function normalizePathForLookup(filePath) {
+  const resolved = path.resolve(filePath);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInside(parentDir, targetPath) {
+  const relative = path.relative(parentDir, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
 
 function getDb() {
   if (db) return db;
@@ -491,16 +502,28 @@ function buildIndex() {
   const entries = new Map();
   const lookupMap = new Map();
   const manifests = [];
+  const manifestErrors = [];
+  const manifestFiles = listManifestFiles();
 
-  for (const manifestPath of MANIFEST_FILES) {
-    const raw = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  for (const manifestPath of manifestFiles) {
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } catch (error) {
+      manifestErrors.push({
+        file: manifestPath,
+        error: `${error.code || "JSON_ERROR"}: ${error.message}`,
+      });
+      continue;
+    }
+
     manifests.push({
       file: manifestPath,
       exportedAt: raw.exported_at,
       total: raw.total,
       scanSources: raw.scan_sources,
     });
-    for (const item of raw.items || []) {
+    for (const item of Array.isArray(raw.items) ? raw.items : []) {
       const entry = parseManifestItem(item, manifestPath, raw.exported_at);
       entries.set(entry.id, entry);
       for (const token of [
@@ -542,6 +565,12 @@ function buildIndex() {
     };
   });
 
+  const allowedLocalPaths = new Set();
+  for (const item of items) {
+    if (item.local?.mediaPath) allowedLocalPaths.add(normalizePathForLookup(item.local.mediaPath));
+    if (item.local?.txtPath) allowedLocalPaths.add(normalizePathForLookup(item.local.txtPath));
+  }
+
   items.sort((a, b) => {
     const left = `${b.date || ""}|${b.id}`;
     const right = `${a.date || ""}|${a.id}`;
@@ -556,10 +585,11 @@ function buildIndex() {
     withLocalText: items.filter((item) => item.hasLocalText).length,
     sources: [...new Set(items.map((item) => item.source))].sort(),
     manifests,
+    manifestErrors,
     database: { ...dbStatus },
   };
 
-  const index = { items, stats, builtAt: new Date().toISOString() };
+  const index = { items, stats, builtAt: new Date().toISOString(), allowedLocalPaths };
   persistIndexToDb(index);
   index.stats.database = { ...dbStatus };
   return index;
@@ -580,10 +610,12 @@ function sendFile(response, filePath, contentType) {
   fs.createReadStream(filePath).pipe(response);
 }
 
-function safePathFromQuery(inputPath) {
+function safePathFromQuery(inputPath, index) {
   if (!inputPath) return null;
   const resolved = path.resolve(inputPath);
-  if (!resolved.startsWith(ROOT)) return null;
+  const ext = path.extname(resolved).toLowerCase();
+  if (ext !== ".mp4" && ext !== ".txt") return null;
+  if (!index?.allowedLocalPaths?.has(normalizePathForLookup(resolved))) return null;
   return resolved;
 }
 
@@ -709,30 +741,44 @@ function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
   if (url.pathname === "/api/index") {
-    const index = ensureIndex();
-    const listing = listItems(index, url);
-    return json(response, 200, {
-      builtAt: index.builtAt,
-      stats: index.stats,
-      items: listing.items,
-      pagination: listing.pagination,
-    });
+    try {
+      const index = ensureIndex();
+      const listing = listItems(index, url);
+      return json(response, 200, {
+        builtAt: index.builtAt,
+        stats: index.stats,
+        items: listing.items,
+        pagination: listing.pagination,
+      });
+    } catch (error) {
+      return json(response, 500, { error: "Failed to build index", details: error.message });
+    }
   }
 
   if (url.pathname.startsWith("/api/item/")) {
-    const index = ensureIndex();
-    const item = itemDetails(index, url);
-    if (!item) return json(response, 404, { error: "Item not found" });
-    return json(response, 200, item);
+    try {
+      const index = ensureIndex();
+      const item = itemDetails(index, url);
+      if (!item) return json(response, 404, { error: "Item not found" });
+      return json(response, 200, item);
+    } catch (error) {
+      return json(response, 500, { error: "Failed to load item details", details: error.message });
+    }
   }
 
   if (url.pathname === "/api/rebuild" && request.method === "POST") {
-    cachedIndex = buildIndex();
-    return json(response, 200, { ok: true, builtAt: cachedIndex.builtAt, stats: cachedIndex.stats });
+    try {
+      const rebuiltIndex = buildIndex();
+      cachedIndex = rebuiltIndex;
+      return json(response, 200, { ok: true, builtAt: cachedIndex.builtAt, stats: cachedIndex.stats });
+    } catch (error) {
+      return json(response, 500, { error: "Failed to rebuild index", details: error.message });
+    }
   }
 
   if (url.pathname === "/media") {
-    const filePath = safePathFromQuery(url.searchParams.get("path"));
+    const index = ensureIndex();
+    const filePath = safePathFromQuery(url.searchParams.get("path"), index);
     if (!filePath || !fs.existsSync(filePath)) return json(response, 404, { error: "Media not found" });
     const ext = path.extname(filePath).toLowerCase();
     const contentType =
@@ -740,8 +786,10 @@ function handleRequest(request, response) {
     return sendFile(response, filePath, contentType);
   }
 
-  const assetPath = url.pathname === "/" ? path.join(PUBLIC_DIR, "index.html") : path.join(PUBLIC_DIR, url.pathname);
-  if (assetPath.startsWith(PUBLIC_DIR) && fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) {
+  const assetPath = url.pathname === "/"
+    ? path.join(PUBLIC_DIR, "index.html")
+    : path.resolve(PUBLIC_DIR, `.${url.pathname}`);
+  if (isPathInside(PUBLIC_DIR, assetPath) && fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) {
     const ext = path.extname(assetPath).toLowerCase();
     const contentType =
       ext === ".css"
@@ -771,11 +819,18 @@ function startServer(port, attempt = 0) {
   });
 
   server.listen(port, () => {
-    const index = ensureIndex();
     const address = server.address();
     const actualPort = typeof address === "object" && address ? address.port : port;
     console.log(`Sora2 Vault Viewer running at http://localhost:${actualPort}`);
-    console.log(`Indexed ${index.stats.totalItems} items`);
+    try {
+      const index = ensureIndex();
+      console.log(`Indexed ${index.stats.totalItems} items`);
+      if (index.stats.manifestErrors?.length) {
+        console.warn(`Skipped ${index.stats.manifestErrors.length} malformed manifest file(s).`);
+      }
+    } catch (error) {
+      console.error(`Initial index build failed: ${error.message}`);
+    }
     console.log("Press Ctrl+C in this terminal to stop the server.");
   });
 }
