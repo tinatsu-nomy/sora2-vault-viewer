@@ -11,6 +11,7 @@ const state = {
     hasPrevious: false,
     hasNext: false,
   },
+  pendingPageAction: null,
   filters: {
     query: "",
     sources: ["v2_profile", "v2_liked", "v2_drafts"],
@@ -37,6 +38,9 @@ const els = {
   rebuildModalTitle: document.querySelector("#rebuildModalTitle"),
   rebuildModalMessage: document.querySelector("#rebuildModalMessage"),
   rebuildModalOk: document.querySelector("#rebuildModalOk"),
+  pageLoadingModal: document.querySelector("#pageLoadingModal"),
+  pageLoadingTitle: document.querySelector("#pageLoadingTitle"),
+  pageLoadingMessage: document.querySelector("#pageLoadingMessage"),
   gallerySection: document.querySelector(".gallery-section"),
   detailSection: document.querySelector(".detail-section"),
   list: document.querySelector("#list"),
@@ -51,6 +55,13 @@ let mediaObserver = null;
 let detailRequestToken = 0;
 let indexRequestToken = 0;
 let searchDebounceTimer = null;
+let galleryPrimePromise = Promise.resolve();
+const pageCache = new Map();
+const detailCache = new Map();
+const pagePrefetchInFlight = new Map();
+const MAX_PAGE_CACHE_ENTRIES = 18;
+const MAX_DETAIL_CACHE_ENTRIES = 120;
+const MIN_PAGE_BUTTON_LOADING_MS = 180;
 
 const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
@@ -106,10 +117,133 @@ function clearSearchDebounce() {
   searchDebounceTimer = null;
 }
 
-function setSectionLoading(section, isLoading) {
+function trimCache(cache, maxEntries) {
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+}
+
+function rememberPageCache(key, payload) {
+  if (!key || !payload) return;
+  pageCache.delete(key);
+  pageCache.set(key, payload);
+  trimCache(pageCache, MAX_PAGE_CACHE_ENTRIES);
+}
+
+function rememberDetailCache(id, payload) {
+  if (!id || !payload) return;
+  detailCache.delete(id);
+  detailCache.set(id, payload);
+  trimCache(detailCache, MAX_DETAIL_CACHE_ENTRIES);
+}
+
+function clearDataCaches() {
+  pageCache.clear();
+  detailCache.clear();
+  pagePrefetchInFlight.clear();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function pendingPageNumber() {
+  return state.pagination.total === 0 ? 1 : Math.floor(state.pagination.offset / state.pagination.limit) + 1;
+}
+
+function showPageLoadingModal() {
+  const pageNumber = pendingPageNumber();
+  els.pageLoadingTitle.textContent = `Loading page ${pageNumber}...`;
+  els.pageLoadingMessage.textContent = "Preparing all videos for this page.";
+  els.pageLoadingModal.classList.remove("hidden");
+  els.pageLoadingModal.setAttribute("aria-hidden", "false");
+}
+
+function hidePageLoadingModal() {
+  els.pageLoadingModal.classList.add("hidden");
+  els.pageLoadingModal.setAttribute("aria-hidden", "true");
+}
+
+function setSectionLoading(section, isLoading, message = "Loading...") {
   if (!section) return;
   section.classList.toggle("is-loading", isLoading);
   section.setAttribute("aria-busy", isLoading ? "true" : "false");
+  if (isLoading) {
+    section.dataset.loadingLabel = message;
+  } else {
+    section.dataset.loadingLabel = "";
+  }
+}
+
+function currentPageQueryString() {
+  return buildQueryString();
+}
+
+function pageQueryStringForOffset(offset) {
+  const params = new URLSearchParams();
+  if (state.filters.query) params.set("query", state.filters.query);
+  if (state.filters.sources.length !== SOURCE_ORDER.length) params.set("sources", state.filters.sources.join(","));
+  if (state.filters.sort) params.set("sort", state.filters.sort);
+  if (state.filters.localOnly) params.set("localOnly", "1");
+  if (state.filters.withText) params.set("withText", "1");
+  if (state.filters.withMedia) params.set("withMedia", "1");
+  params.set("limit", String(state.pagination.limit));
+  params.set("offset", String(Math.max(0, offset)));
+  return params.toString();
+}
+
+function applyIndexPayload(payload) {
+  state.items = payload.items;
+  state.stats = payload.stats;
+  state.pagination = payload.pagination || {
+    total: payload.items.length,
+    limit: state.pagination.limit,
+    offset: 0,
+    page: 1,
+    totalPages: 1,
+    hasPrevious: false,
+    hasNext: false,
+  };
+  renderStats();
+  renderList();
+  renderPagination();
+  if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
+  if (state.selectedId && !state.items.find((item) => item.id === state.selectedId)) {
+    state.selectedId = state.items[0]?.id || null;
+  }
+  updateActiveCard();
+}
+
+async function prefetchIndexPage(queryString) {
+  if (!queryString || pageCache.has(queryString) || pagePrefetchInFlight.has(queryString)) return;
+  const pending = (async () => {
+    try {
+      const response = await fetch(`/api/index?${queryString}`);
+      const payload = await response.json();
+      if (!response.ok) return;
+      rememberPageCache(queryString, payload);
+    } catch {}
+  })();
+  pagePrefetchInFlight.set(queryString, pending);
+  try {
+    await pending;
+  } finally {
+    pagePrefetchInFlight.delete(queryString);
+  }
+}
+
+function prefetchNeighborPages() {
+  const { hasPrevious, hasNext, offset, limit, totalPages } = state.pagination;
+  if (!totalPages) return;
+  if (hasPrevious) {
+    void prefetchIndexPage(pageQueryStringForOffset(offset - limit));
+  }
+  if (hasNext) {
+    void prefetchIndexPage(pageQueryStringForOffset(offset + limit));
+  }
 }
 
 function buildQueryString() {
@@ -155,11 +289,25 @@ function renderIndexError(message) {
   els.detail.innerHTML = "Fix the manifest/index issue and try Rescan again.";
 }
 
-async function fetchIndex() {
+async function fetchIndex({ reason = "load", useCache = true } = {}) {
   const requestToken = ++indexRequestToken;
-  setSectionLoading(els.gallerySection, true);
+  const queryString = currentPageQueryString();
+  const loadingMessage = reason === "search" ? "Updating results..." : "Loading...";
+  const showGalleryLoading = reason !== "page";
+
+  if (useCache && pageCache.has(queryString)) {
+    applyIndexPayload(pageCache.get(queryString));
+    await galleryPrimePromise;
+    void renderDetail();
+    prefetchNeighborPages();
+    return;
+  }
+
+  if (showGalleryLoading) {
+    setSectionLoading(els.gallerySection, true, loadingMessage);
+  }
   try {
-    const response = await fetch(`/api/index?${buildQueryString()}`);
+    const response = await fetch(`/api/index?${queryString}`);
     const payload = await response.json();
     if (requestToken !== indexRequestToken) {
       return;
@@ -171,45 +319,32 @@ async function fetchIndex() {
       return;
     }
 
-    state.items = payload.items;
-    state.stats = payload.stats;
-    state.pagination = payload.pagination || {
-      total: payload.items.length,
-      limit: state.pagination.limit,
-      offset: 0,
-      page: 1,
-      totalPages: 1,
-      hasPrevious: false,
-      hasNext: false,
-    };
-    renderStats();
-    renderList();
-    renderPagination();
-    if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
-    if (state.selectedId && !state.items.find((item) => item.id === state.selectedId)) {
-      state.selectedId = state.items[0]?.id || null;
-    }
-    updateActiveCard();
+    rememberPageCache(queryString, payload);
+    applyIndexPayload(payload);
+    await galleryPrimePromise;
     await renderDetail();
+    prefetchNeighborPages();
   } catch (error) {
     if (requestToken !== indexRequestToken) {
       return;
     }
     renderIndexError(error?.message || "Failed to load index");
   } finally {
-    if (requestToken === indexRequestToken) {
+    if (showGalleryLoading && requestToken === indexRequestToken) {
       setSectionLoading(els.gallerySection, false);
     }
   }
 }
 
 async function fetchDetail(id) {
+  if (detailCache.has(id)) return detailCache.get(id);
   const response = await fetch(`/api/item/${encodeURIComponent(id)}`);
   const payload = await response.json();
   if (!response.ok) {
     const message = payload?.details ? `${payload.error || "Failed to load details"}: ${payload.details}` : payload?.error || "Failed to load details";
     throw new Error(message);
   }
+  rememberDetailCache(id, payload);
   return payload;
 }
 
@@ -267,7 +402,7 @@ function createMediaMarkup(item) {
           muted
           loop
           playsinline
-          preload="none"
+          preload="metadata"
         ></video>
       </div>
     `;
@@ -294,9 +429,31 @@ function loadGalleryVideo(video) {
   video.load();
 }
 
+function waitForGalleryVideoReady(video) {
+  if (!video) return Promise.resolve();
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      video.removeEventListener("loadedmetadata", finish);
+      video.removeEventListener("error", finish);
+      resolve();
+    };
+    video.addEventListener("loadedmetadata", finish, { once: true });
+    video.addEventListener("error", finish, { once: true });
+  });
+}
+
 function pauseGalleryVideo(video) {
   if (!video) return;
   video.pause();
+}
+
+function primeGalleryVideos() {
+  const videos = [...els.list.querySelectorAll(".gallery-video")];
+  for (const video of videos) {
+    loadGalleryVideo(video);
+  }
+  return Promise.all(videos.map((video) => waitForGalleryVideoReady(video)));
 }
 
 function syncGalleryPlayback() {
@@ -518,6 +675,7 @@ function renderList() {
     });
   }
 
+  galleryPrimePromise = primeGalleryVideos();
   setupGalleryMediaObserver();
 }
 
@@ -538,22 +696,57 @@ function renderPagination() {
     </div>
   `;
 
+  const pendingAction = state.pendingPageAction;
+  if (pendingAction) {
+    for (const button of els.pagination.querySelectorAll(".page-button")) {
+      const isPendingButton = button.dataset.page === pendingAction;
+      button.disabled = true;
+      button.classList.toggle("is-loading", isPendingButton);
+      if (isPendingButton) {
+        button.dataset.defaultLabel = button.textContent;
+        button.textContent = "Loading...";
+      }
+    }
+  }
+
   for (const button of els.pagination.querySelectorAll(".page-button")) {
     button.addEventListener("click", async () => {
-      if (button.dataset.page === "first" && state.pagination.hasPrevious) {
+      if (state.pendingPageAction) return;
+      const pageAction = button.dataset.page;
+      const startedAt = Date.now();
+      if (pageAction === "first" && !state.pagination.hasPrevious) return;
+      if (pageAction === "prev" && !state.pagination.hasPrevious) return;
+      if (pageAction === "next" && !state.pagination.hasNext) return;
+      if (pageAction === "last" && !state.pagination.hasNext) return;
+
+      if (pageAction === "first") {
         state.pagination.offset = 0;
       }
-      if (button.dataset.page === "prev" && state.pagination.hasPrevious) {
+      if (pageAction === "prev") {
         state.pagination.offset = Math.max(0, state.pagination.offset - state.pagination.limit);
       }
-      if (button.dataset.page === "next" && state.pagination.hasNext) {
+      if (pageAction === "next") {
         state.pagination.offset += state.pagination.limit;
       }
-      if (button.dataset.page === "last" && state.pagination.hasNext) {
+      if (pageAction === "last") {
         state.pagination.offset = Math.max(0, (state.pagination.totalPages - 1) * state.pagination.limit);
       }
-      await refresh();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      state.pendingPageAction = pageAction;
+      renderPagination();
+      showPageLoadingModal();
+      syncFiltersFromForm();
+      try {
+        await fetchIndex({ reason: "page" });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } finally {
+        const remainingMs = MIN_PAGE_BUTTON_LOADING_MS - (Date.now() - startedAt);
+        if (remainingMs > 0) {
+          await delay(remainingMs);
+        }
+        state.pendingPageAction = null;
+        hidePageLoadingModal();
+        renderPagination();
+      }
     });
   }
 }
@@ -723,6 +916,7 @@ function applySourceFilter(source) {
 
   syncNavChips();
   resetPagination();
+  clearDataCaches();
   refresh();
 }
 
@@ -732,7 +926,7 @@ function resetPagination() {
 
 async function refresh() {
   syncFiltersFromForm();
-  await fetchIndex();
+  await fetchIndex({ reason: "search" });
 }
 
 function setRebuildState(isBusy, message = "") {
@@ -759,6 +953,7 @@ els.clearQueryButton.addEventListener("click", async () => {
   clearSearchDebounce();
   els.query.value = "";
   resetPagination();
+  clearDataCaches();
   await refresh();
   els.query.focus();
 });
@@ -767,6 +962,7 @@ els.query.addEventListener("input", () => {
   searchDebounceTimer = setTimeout(async () => {
     searchDebounceTimer = null;
     resetPagination();
+    clearDataCaches();
     await refresh();
   }, 220);
 });
@@ -774,15 +970,18 @@ els.query.addEventListener("keydown", async (event) => {
   if (event.key === "Enter") {
     clearSearchDebounce();
     resetPagination();
+    clearDataCaches();
     await refresh();
   }
 });
 els.sort.addEventListener("change", async () => {
   resetPagination();
+  clearDataCaches();
   await refresh();
 });
 els.pageSize.addEventListener("change", async () => {
   resetPagination();
+  clearDataCaches();
   await refresh();
 });
 
@@ -795,6 +994,7 @@ for (const chip of els.navChips) {
 for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
   checkbox.addEventListener("change", async () => {
     resetPagination();
+    clearDataCaches();
     await refresh();
   });
 }
@@ -817,6 +1017,7 @@ els.rebuildButton.addEventListener("click", async () => {
         : payload?.error || "Rescan failed";
       throw new Error(message);
     }
+    clearDataCaches();
     await refresh();
     setRebuildState(false, "");
     showRebuildModal("Rescan complete", "Manifest and local file scanning has finished.");
