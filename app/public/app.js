@@ -376,18 +376,26 @@ function renderPagination() {
   els.pagination.innerHTML = `
     <div class="pagination-summary">Page ${page} of ${totalPages}</div>
     <div class="pagination-actions">
+      <button type="button" class="secondary page-button" data-page="first" ${hasPrevious ? "" : "disabled"}>First</button>
       <button type="button" class="secondary page-button" data-page="prev" ${hasPrevious ? "" : "disabled"}>Previous</button>
       <button type="button" class="secondary page-button" data-page="next" ${hasNext ? "" : "disabled"}>Next</button>
+      <button type="button" class="secondary page-button" data-page="last" ${hasNext ? "" : "disabled"}>Last</button>
     </div>
   `;
 
   for (const button of els.pagination.querySelectorAll(".page-button")) {
     button.addEventListener("click", async () => {
+      if (button.dataset.page === "first" && state.pagination.hasPrevious) {
+        state.pagination.offset = 0;
+      }
       if (button.dataset.page === "prev" && state.pagination.hasPrevious) {
         state.pagination.offset = Math.max(0, state.pagination.offset - state.pagination.limit);
       }
       if (button.dataset.page === "next" && state.pagination.hasNext) {
         state.pagination.offset += state.pagination.limit;
+      }
+      if (button.dataset.page === "last" && state.pagination.hasNext) {
+        state.pagination.offset = Math.max(0, (state.pagination.totalPages - 1) * state.pagination.limit);
       }
       await refresh();
       window.scrollTo({ top: 0, behavior: "smooth" });
