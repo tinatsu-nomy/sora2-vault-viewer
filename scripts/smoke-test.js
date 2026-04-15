@@ -12,7 +12,8 @@ const PORT = 33210;
 
 process.env.PORT = String(PORT);
 process.env.SORA_DATA_DIR = DATA_DIR;
-process.env.SORA_ENABLE_SQLITE_CACHE = "0";
+process.env.SORA_ENABLE_SQLITE_CACHE = "1";
+process.env.SORA_SQLITE_PATH = ":memory:";
 process.env.SORA_BIND_HOST = "127.0.0.1";
 
 const { startServer } = require(path.join(ROOT, "app", "server.js"));
@@ -42,6 +43,7 @@ function writeFixtureData() {
           post: {
             id: "s_smoke123",
             text: "Smoke test prompt",
+            caption: "Manifest only caption",
             like_count: 7,
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
@@ -110,6 +112,12 @@ async function run() {
     assert.equal(indexPayload.items[0].mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
     assert.equal(indexPayload.items[0].posterUsername, "smoke_user");
     assert.equal(indexPayload.items[0].localMediaPath, undefined);
+    assert.equal(indexPayload.stats.database.enabled, true, "Expected SQLite-backed index metadata");
+
+    const manifestSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=caption`);
+    assert.equal(manifestSearchResponse.status, 200, "Expected manifest search to return 200");
+    const manifestSearchPayload = await manifestSearchResponse.json();
+    assert.equal(manifestSearchPayload.items.length, 1, "Expected manifest-only metadata to be searchable");
 
     const detailResponse = await fetch(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(indexPayload.items[0].id)}`,

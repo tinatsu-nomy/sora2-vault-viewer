@@ -5,6 +5,7 @@ const { URL } = require("url");
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
+const SQLITE_SCHEMA_VERSION = "2";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE === "1";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
@@ -67,7 +68,18 @@ function getDb() {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `);
 
+    const currentSchemaVersion = db.prepare("SELECT value FROM cache_meta WHERE key = ?").get("schemaVersion")?.value || null;
+    if (currentSchemaVersion !== SQLITE_SCHEMA_VERSION) {
+      db.exec(`
+        DELETE FROM cache_meta;
+        DROP TABLE IF EXISTS items;
+        DROP TABLE IF EXISTS items_fts;
+      `);
+    }
+
+    db.exec(`
       CREATE TABLE IF NOT EXISTS items (
         id TEXT PRIMARY KEY,
         source TEXT,
@@ -78,25 +90,46 @@ function getDb() {
         generation_id TEXT,
         task_id TEXT,
         post_id TEXT,
-        duration REAL,
+        poster_username TEXT,
+        owner_usernames_json TEXT NOT NULL,
+        cameo_owner_usernames_json TEXT NOT NULL,
+        duration TEXT,
+        duration_sort REAL,
         ratio TEXT,
         width INTEGER,
         height INTEGER,
+        like_count INTEGER,
+        view_count INTEGER,
         is_liked INTEGER,
         has_local_media INTEGER,
         has_local_text INTEGER,
         thumb_url TEXT,
         preview_url TEXT,
+        download_url TEXT,
         local_media_path TEXT,
         local_txt_path TEXT,
-        payload_json TEXT NOT NULL
+        search_text TEXT NOT NULL,
+        detail_json TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_items_source_date ON items(source, date);
       CREATE INDEX IF NOT EXISTS idx_items_post_id ON items(post_id);
       CREATE INDEX IF NOT EXISTS idx_items_task_id ON items(task_id);
       CREATE INDEX IF NOT EXISTS idx_items_generation_id ON items(generation_id);
+      CREATE INDEX IF NOT EXISTS idx_items_local_flags ON items(has_local_media, has_local_text);
+      CREATE INDEX IF NOT EXISTS idx_items_views ON items(view_count);
+      CREATE INDEX IF NOT EXISTS idx_items_likes ON items(like_count);
+      CREATE INDEX IF NOT EXISTS idx_items_duration_sort ON items(duration_sort);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+        id UNINDEXED,
+        search_text,
+        tokenize = 'unicode61'
+      );
     `);
+    db.prepare(`
+      INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
+    `).run("schemaVersion", SQLITE_SCHEMA_VERSION);
     return db;
   } catch (error) {
     db = null;
@@ -118,13 +151,20 @@ function persistIndexToDb(index) {
     const insert = database.prepare(`
       INSERT OR REPLACE INTO items (
         id, source, kind, date, prompt, gen_id, generation_id, task_id, post_id,
-        duration, ratio, width, height, is_liked, has_local_media, has_local_text,
-        thumb_url, preview_url, local_media_path, local_txt_path, payload_json
+        poster_username, owner_usernames_json, cameo_owner_usernames_json,
+        duration, duration_sort, ratio, width, height, like_count, view_count,
+        is_liked, has_local_media, has_local_text, thumb_url, preview_url, download_url,
+        local_media_path, local_txt_path, search_text, detail_json
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?
       )
+    `);
+    const insertFts = database.prepare(`
+      INSERT INTO items_fts (id, search_text) VALUES (?, ?)
     `);
     const setMeta = database.prepare(`
       INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
@@ -133,6 +173,7 @@ function persistIndexToDb(index) {
     database.exec("BEGIN");
     txActive = true;
     database.exec("DELETE FROM items");
+    database.exec("DELETE FROM items_fts");
     for (const item of index.items) {
       insert.run(
         item.id,
@@ -144,23 +185,33 @@ function persistIndexToDb(index) {
         item.generationId,
         item.taskId,
         item.postId,
-        typeof item.duration === "number" ? item.duration : null,
+        item.posterUsername || null,
+        JSON.stringify(item.ownerUsernames || []),
+        JSON.stringify(item.cameoOwnerUsernames || []),
+        item.duration == null ? null : String(item.duration),
+        sortableDuration(item.duration),
         item.ratio,
         item.width,
         item.height,
+        typeof item.likeCount === "number" ? item.likeCount : null,
+        typeof item.viewCount === "number" ? item.viewCount : null,
         item.isLiked ? 1 : 0,
         item.hasLocalMedia ? 1 : 0,
         item.hasLocalText ? 1 : 0,
         item.thumbUrl,
         item.previewUrl,
+        item.downloadUrl,
         item.local?.mediaPath || null,
         item.local?.txtPath || null,
+        item.searchText,
         JSON.stringify(item),
       );
+      insertFts.run(item.id, item.searchText);
     }
     setMeta.run("builtAt", index.builtAt);
     setMeta.run("totalItems", String(index.stats.totalItems));
     setMeta.run("dbPath", DB_PATH);
+    setMeta.run("statsJson", JSON.stringify(index.stats));
     database.exec("COMMIT");
     txActive = false;
     dbStatus = {
@@ -407,6 +458,37 @@ function manifestSearchText(entry) {
   return values.join("\n");
 }
 
+function sortableDuration(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value == null) return null;
+  const match = String(value).match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function parseJson(value, fallback) {
+  if (value == null) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function escapeLikePattern(value) {
+  return String(value).replace(/[\\%_]/g, "\\$&");
+}
+
+function buildFtsMatchQuery(query) {
+  const terms = String(query || "")
+    .trim()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (!terms.length) return null;
+  if (terms.some((term) => /["':*()\-]/.test(term))) return null;
+  return terms.map((term) => `"${term.replaceAll('"', '""')}"*`).join(" AND ");
+}
+
 function addLookup(map, key, entryId) {
   if (!key) return;
   const normalized = slugForText(key);
@@ -638,8 +720,37 @@ function buildIndex() {
   return index;
 }
 
+function loadIndexFromDb() {
+  const database = getDb();
+  if (!database) return null;
+
+  const metaRows = database.prepare("SELECT key, value FROM cache_meta").all();
+  const meta = new Map(metaRows.map((row) => [row.key, row.value]));
+  const builtAt = meta.get("builtAt") || null;
+  const stats = parseJson(meta.get("statsJson"), null);
+  if (!builtAt || !stats) return null;
+
+  const countRow = database.prepare("SELECT COUNT(*) AS count FROM items").get();
+  dbStatus = {
+    enabled: true,
+    path: DB_PATH,
+    savedItems: Number(countRow?.count || 0),
+    error: null,
+  };
+
+  return {
+    builtAt,
+    stats: {
+      ...stats,
+      database: { ...dbStatus },
+    },
+  };
+}
+
 function ensureIndex() {
-  if (!cachedIndex) cachedIndex = buildIndex();
+  if (!cachedIndex) {
+    cachedIndex = loadIndexFromDb() || buildIndex();
+  }
   return cachedIndex;
 }
 
@@ -668,6 +779,38 @@ function sendFile(response, filePath, contentType, extraHeaders = {}) {
   fs.createReadStream(filePath).pipe(response);
 }
 
+function parseListParams(url) {
+  const query = slugForText(url.searchParams.get("query"));
+  const source = url.searchParams.get("source");
+  const hasSourcesParam = url.searchParams.has("sources");
+  const sources = url.searchParams
+    .get("sources")
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean) || [];
+  const localOnly = url.searchParams.get("localOnly") === "1";
+  const withText = url.searchParams.get("withText") === "1";
+  const withMedia = url.searchParams.get("withMedia") === "1";
+  const sort = url.searchParams.get("sort") || "date-desc";
+  const requestedLimit = Number(url.searchParams.get("limit") || 180);
+  const requestedOffset = Number(url.searchParams.get("offset") || 0);
+  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 180, 240));
+  const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
+
+  return {
+    query,
+    source,
+    hasSourcesParam,
+    sources,
+    localOnly,
+    withText,
+    withMedia,
+    sort,
+    limit,
+    offset,
+  };
+}
+
 function serializeListItem(item) {
   return {
     id: item.id,
@@ -694,6 +837,35 @@ function serializeListItem(item) {
     mediaUrl: item.hasLocalMedia ? mediaUrlFor(item.id, "media") : null,
     hasLocalMedia: item.hasLocalMedia,
     hasLocalText: item.hasLocalText,
+  };
+}
+
+function serializeListRow(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    source: row.source,
+    date: row.date,
+    prompt: row.prompt,
+    genId: row.genId,
+    generationId: row.generationId,
+    taskId: row.taskId,
+    postId: row.postId,
+    duration: row.duration,
+    ratio: row.ratio,
+    width: row.width,
+    height: row.height,
+    likeCount: row.likeCount,
+    viewCount: row.viewCount,
+    posterUsername: row.posterUsername || null,
+    cameoOwnerUsernames: parseJson(row.cameoOwnerUsernamesJson, []),
+    isLiked: Boolean(row.isLiked),
+    previewUrl: DEBUG_MODE ? row.previewUrl : null,
+    downloadUrl: DEBUG_MODE ? row.downloadUrl : null,
+    thumbUrl: DEBUG_MODE ? row.thumbUrl : null,
+    mediaUrl: row.hasLocalMedia ? mediaUrlFor(row.id, "media") : null,
+    hasLocalMedia: Boolean(row.hasLocalMedia),
+    hasLocalText: Boolean(row.hasLocalText),
   };
 }
 
@@ -770,35 +942,158 @@ function serializeDetailItem(item) {
   };
 }
 
-function listItems(index, url) {
-  const query = slugForText(url.searchParams.get("query"));
-  const source = url.searchParams.get("source");
-  const hasSourcesParam = url.searchParams.has("sources");
-  const sources = url.searchParams
-    .get("sources")
-    ?.split(",")
-    .map((item) => item.trim())
-    .filter(Boolean) || [];
-  const localOnly = url.searchParams.get("localOnly") === "1";
-  const withText = url.searchParams.get("withText") === "1";
-  const withMedia = url.searchParams.get("withMedia") === "1";
-  const sort = url.searchParams.get("sort") || "date-desc";
-  const requestedLimit = Number(url.searchParams.get("limit") || 180);
-  const requestedOffset = Number(url.searchParams.get("offset") || 0);
-  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 180, 240));
-  const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
+function listItemsFromDb(url) {
+  const database = getDb();
+  if (!database) return null;
 
-  let filtered = index.items;
-  if (query) filtered = filtered.filter((item) => item.searchText.includes(query));
-  if (hasSourcesParam) {
-    const allowedSources = new Set(sources);
-    filtered = filtered.filter((item) => allowedSources.has(item.source));
-  } else if (source && source !== "all") {
-    filtered = filtered.filter((item) => item.source === source);
+  const params = parseListParams(url);
+  const joins = [];
+  const where = [];
+  const values = [];
+
+  if (params.query) {
+    const ftsQuery = buildFtsMatchQuery(params.query);
+    if (ftsQuery) {
+      joins.push("JOIN items_fts ON items_fts.id = items.id");
+      where.push("items_fts MATCH ?");
+      values.push(ftsQuery);
+    } else {
+      where.push("items.search_text LIKE ? ESCAPE '\\'");
+      values.push(`%${escapeLikePattern(params.query)}%`);
+    }
   }
-  if (localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
-  if (withText) filtered = filtered.filter((item) => item.hasLocalText);
-  if (withMedia) filtered = filtered.filter((item) => item.hasLocalMedia);
+
+  if (params.hasSourcesParam) {
+    if (!params.sources.length) {
+      return {
+        items: [],
+        pagination: {
+          total: 0,
+          limit: params.limit,
+          offset: 0,
+          page: 0,
+          totalPages: 0,
+          hasPrevious: false,
+          hasNext: false,
+        },
+      };
+    }
+    where.push(`items.source IN (${params.sources.map(() => "?").join(", ")})`);
+    values.push(...params.sources);
+  } else if (params.source && params.source !== "all") {
+    where.push("items.source = ?");
+    values.push(params.source);
+  }
+
+  if (params.localOnly) where.push("(items.has_local_media = 1 OR items.has_local_text = 1)");
+  if (params.withText) where.push("items.has_local_text = 1");
+  if (params.withMedia) where.push("items.has_local_media = 1");
+
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const fromClause = `FROM items ${joins.join(" ")}`;
+  const orderBy = (() => {
+    switch (params.sort) {
+      case "date-asc":
+        return "ORDER BY COALESCE(items.date, ''), items.id";
+      case "views-desc":
+        return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date, '') DESC, items.id DESC";
+      case "views-asc":
+        return "ORDER BY COALESCE(items.view_count, 0) ASC, COALESCE(items.date, '') ASC, items.id ASC";
+      case "likes-desc":
+        return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date, '') DESC, items.id DESC";
+      case "likes-asc":
+        return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date, '') ASC, items.id ASC";
+      case "prompt-asc":
+        return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE ASC, items.id ASC";
+      case "prompt-desc":
+        return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE DESC, items.id DESC";
+      case "duration-asc":
+        return "ORDER BY COALESCE(items.duration_sort, 0) ASC, items.id ASC";
+      case "duration-desc":
+        return "ORDER BY COALESCE(items.duration_sort, 0) DESC, items.id DESC";
+      case "source-asc":
+        return `
+          ORDER BY CASE items.source
+            WHEN 'v2_profile' THEN 0
+            WHEN 'v2_liked' THEN 1
+            WHEN 'v2_drafts' THEN 2
+            ELSE 9
+          END ASC,
+          COALESCE(items.date, '') ASC,
+          items.id ASC
+        `;
+      case "date-desc":
+      default:
+        return "ORDER BY COALESCE(items.date, '') DESC, items.id DESC";
+    }
+  })();
+
+  const countSql = `SELECT COUNT(*) AS count ${fromClause} ${whereClause}`;
+  const total = Number(database.prepare(countSql).get(...values)?.count || 0);
+  const safeOffset = total === 0 ? 0 : Math.min(params.offset, Math.floor((total - 1) / params.limit) * params.limit);
+
+  const dataSql = `
+    SELECT
+      items.id,
+      items.kind,
+      items.source,
+      items.date,
+      items.prompt,
+      items.gen_id AS genId,
+      items.generation_id AS generationId,
+      items.task_id AS taskId,
+      items.post_id AS postId,
+      items.duration,
+      items.ratio,
+      items.width,
+      items.height,
+      items.like_count AS likeCount,
+      items.view_count AS viewCount,
+      items.poster_username AS posterUsername,
+      items.cameo_owner_usernames_json AS cameoOwnerUsernamesJson,
+      items.is_liked AS isLiked,
+      items.preview_url AS previewUrl,
+      items.download_url AS downloadUrl,
+      items.thumb_url AS thumbUrl,
+      items.has_local_media AS hasLocalMedia,
+      items.has_local_text AS hasLocalText
+    ${fromClause}
+    ${whereClause}
+    ${orderBy}
+    LIMIT ? OFFSET ?
+  `;
+  const rows = database.prepare(dataSql).all(...values, params.limit, safeOffset);
+
+  return {
+    items: rows.map(serializeListRow),
+    pagination: {
+      total,
+      limit: params.limit,
+      offset: safeOffset,
+      page: total === 0 ? 0 : Math.floor(safeOffset / params.limit) + 1,
+      totalPages: total === 0 ? 0 : Math.ceil(total / params.limit),
+      hasPrevious: safeOffset > 0,
+      hasNext: safeOffset + params.limit < total,
+    },
+  };
+}
+
+function listItems(index, url) {
+  const dbListing = listItemsFromDb(url);
+  if (dbListing) return dbListing;
+
+  const params = parseListParams(url);
+  let filtered = index.items;
+  if (params.query) filtered = filtered.filter((item) => item.searchText.includes(params.query));
+  if (params.hasSourcesParam) {
+    const allowedSources = new Set(params.sources);
+    filtered = filtered.filter((item) => allowedSources.has(item.source));
+  } else if (params.source && params.source !== "all") {
+    filtered = filtered.filter((item) => item.source === params.source);
+  }
+  if (params.localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
+  if (params.withText) filtered = filtered.filter((item) => item.hasLocalText);
+  if (params.withMedia) filtered = filtered.filter((item) => item.hasLocalMedia);
 
   const sorted = [...filtered];
   sorted.sort((left, right) => {
@@ -808,7 +1103,7 @@ function listItems(index, url) {
     const rightViews = Number(right.viewCount || 0);
     const leftLikes = Number(left.likeCount || 0);
     const rightLikes = Number(right.likeCount || 0);
-    switch (sort) {
+    switch (params.sort) {
       case "date-asc":
         return `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
       case "views-desc":
@@ -836,31 +1131,46 @@ function listItems(index, url) {
   });
 
   const total = sorted.length;
-  const safeOffset = total === 0 ? 0 : Math.min(offset, Math.floor((total - 1) / limit) * limit);
-  const items = sorted.slice(safeOffset, safeOffset + limit).map(serializeListItem);
+  const safeOffset = total === 0 ? 0 : Math.min(params.offset, Math.floor((total - 1) / params.limit) * params.limit);
+  const items = sorted.slice(safeOffset, safeOffset + params.limit).map(serializeListItem);
 
   return {
     items,
     pagination: {
       total,
-      limit,
+      limit: params.limit,
       offset: safeOffset,
-      page: total === 0 ? 0 : Math.floor(safeOffset / limit) + 1,
-      totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      page: total === 0 ? 0 : Math.floor(safeOffset / params.limit) + 1,
+      totalPages: total === 0 ? 0 : Math.ceil(total / params.limit),
       hasPrevious: safeOffset > 0,
-      hasNext: safeOffset + limit < total,
+      hasNext: safeOffset + params.limit < total,
     },
   };
 }
 
 function itemDetails(index, url) {
   const id = url.pathname.replace("/api/item/", "");
+  const database = getDb();
+  if (database) {
+    const row = database.prepare("SELECT detail_json FROM items WHERE id = ?").get(decodeURIComponent(id));
+    return row ? parseJson(row.detail_json, null) : null;
+  }
   return index.items.find((item) => item.id === decodeURIComponent(id)) || null;
 }
 
 function localFileForRequest(index, url) {
   const id = decodeURIComponent(url.searchParams.get("id") || "");
   const kind = url.searchParams.get("kind") || "media";
+  const database = getDb();
+  if (database) {
+    const row = database
+      .prepare("SELECT local_media_path AS mediaPath, local_txt_path AS txtPath FROM items WHERE id = ?")
+      .get(id);
+    if (!row) return null;
+    if (kind === "media") return row.mediaPath || null;
+    if (kind === "txt") return row.txtPath || null;
+    return null;
+  }
   const item = index.items.find((entry) => entry.id === id);
   if (!item) return null;
   if (kind === "media") return item.local?.mediaPath || null;
