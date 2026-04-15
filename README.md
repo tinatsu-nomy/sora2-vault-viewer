@@ -27,6 +27,7 @@ Windows (PowerShell):
 ```powershell
 git clone https://github.com/tinatsu-nomy/sora2-vault-viewer.git
 cd sora2-vault-viewer
+mkdir sora2_data
 ```
 
 Project structure:
@@ -45,7 +46,7 @@ sora2_data/
   sora_v2_drafts/
 ```
 
-Place your exported data under `sora2_data/` so the layout looks like this:
+Download your Sora2 export data into `sora2_data/` so the layout looks like this:
 
 ```text
 sora2_data/
