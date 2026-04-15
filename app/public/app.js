@@ -56,12 +56,14 @@ let detailRequestToken = 0;
 let indexRequestToken = 0;
 let searchDebounceTimer = null;
 let galleryPrimePromise = Promise.resolve();
+let galleryBackgroundPrimePromise = Promise.resolve();
 const pageCache = new Map();
 const detailCache = new Map();
 const pagePrefetchInFlight = new Map();
 const MAX_PAGE_CACHE_ENTRIES = 18;
 const MAX_DETAIL_CACHE_ENTRIES = 120;
 const MIN_PAGE_BUTTON_LOADING_MS = 180;
+const CRITICAL_GALLERY_VIDEO_COUNT = 12;
 
 const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
@@ -443,17 +445,40 @@ function waitForGalleryVideoReady(video) {
   });
 }
 
+function waitForGalleryVideosReady(videos) {
+  return Promise.all(videos.map((video) => waitForGalleryVideoReady(video)));
+}
+
 function pauseGalleryVideo(video) {
   if (!video) return;
   video.pause();
 }
 
-function primeGalleryVideos() {
+function galleryVideoGroups() {
   const videos = [...els.list.querySelectorAll(".gallery-video")];
+  return {
+    criticalVideos: videos.slice(0, CRITICAL_GALLERY_VIDEO_COUNT),
+    remainingVideos: videos.slice(CRITICAL_GALLERY_VIDEO_COUNT),
+  };
+}
+
+function loadGalleryVideos(videos) {
   for (const video of videos) {
     loadGalleryVideo(video);
   }
-  return Promise.all(videos.map((video) => waitForGalleryVideoReady(video)));
+}
+
+function primeCriticalGalleryVideos(videos) {
+  loadGalleryVideos(videos);
+  return waitForGalleryVideosReady(videos);
+}
+
+function primeRemainingGalleryVideos(videos) {
+  if (!videos.length) return Promise.resolve();
+  return delay(120).then(() => {
+    loadGalleryVideos(videos);
+    return Promise.allSettled(videos.map((video) => waitForGalleryVideoReady(video)));
+  });
 }
 
 function syncGalleryPlayback() {
@@ -675,7 +700,9 @@ function renderList() {
     });
   }
 
-  galleryPrimePromise = primeGalleryVideos();
+  const { criticalVideos, remainingVideos } = galleryVideoGroups();
+  galleryPrimePromise = primeCriticalGalleryVideos(criticalVideos);
+  galleryBackgroundPrimePromise = galleryPrimePromise.then(() => primeRemainingGalleryVideos(remainingVideos));
   setupGalleryMediaObserver();
 }
 
