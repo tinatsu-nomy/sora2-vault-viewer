@@ -88,6 +88,18 @@ Optional environment variables:
 3. Restart the server or click `Rescan` in the viewer
 4. Confirm the new items appear in the gallery and detail view
 
+### How local files are linked to manifest JSON
+
+Local `mp4` / `txt` files are linked to manifest items only when all of the following are true:
+
+- The files are placed in the matching source directory (`profile`, `liked`, or `drafts`)
+- The `mp4` and `txt` files share the same stem
+- The viewer can match the local files to a manifest item using one or more identifiers such as `generationId`, `taskId`, `postId`, extracted ID tokens, or the file stem
+
+In practice, a SoraVault 2.0 filename template such as `{date}_{genId}` has been confirmed to work with this viewer.
+
+If these conditions are not met, the files can still appear in the viewer as `local-only` items, but they will not be linked to manifest JSON metadata.
+
 ## Recent Viewer Updates
 
 - Added a Sora-like dark gallery layout with inline local playback
