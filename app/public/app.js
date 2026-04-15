@@ -361,12 +361,19 @@ function updateActiveCard() {
   for (const card of els.list.querySelectorAll(".gallery-card")) {
     const isActive = card.dataset.id === state.selectedId;
     card.classList.toggle("active", isActive);
-    card.setAttribute("aria-pressed", isActive ? "true" : "false");
+    const button = card.querySelector(".gallery-select-button");
+    if (button) {
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
   }
 }
 
 function galleryCards() {
   return [...els.list.querySelectorAll(".gallery-card")];
+}
+
+function gallerySelectButtons() {
+  return [...els.list.querySelectorAll(".gallery-select-button")];
 }
 
 function horizontalCenter(card) {
@@ -381,13 +388,17 @@ function rowCards(cards, top) {
   return cards.filter((card) => Math.abs(card.offsetTop - top) <= 4);
 }
 
-function findArrowNavigationTarget(currentCard, direction) {
-  const cards = galleryCards();
-  const currentIndex = cards.indexOf(currentCard);
+function findArrowNavigationTarget(currentButton, direction) {
+  const buttons = gallerySelectButtons();
+  const currentIndex = buttons.indexOf(currentButton);
   if (currentIndex === -1) return null;
 
-  if (direction === "ArrowLeft") return cards[currentIndex - 1] || null;
-  if (direction === "ArrowRight") return cards[currentIndex + 1] || null;
+  if (direction === "ArrowLeft") return buttons[currentIndex - 1] || null;
+  if (direction === "ArrowRight") return buttons[currentIndex + 1] || null;
+
+  const cards = buttons.map((button) => button.closest(".gallery-card")).filter(Boolean);
+  const currentCard = currentButton.closest(".gallery-card");
+  if (!currentCard) return null;
 
   const tops = rowTops(cards);
   const currentTop = tops.find((top) => Math.abs(top - currentCard.offsetTop) <= 4);
@@ -400,12 +411,13 @@ function findArrowNavigationTarget(currentCard, direction) {
   if (!targetCards.length) return null;
 
   const currentCenter = horizontalCenter(currentCard);
-  return targetCards.reduce((best, candidate) => {
+  const targetCard = targetCards.reduce((best, candidate) => {
     if (!best) return candidate;
     return Math.abs(horizontalCenter(candidate) - currentCenter) < Math.abs(horizontalCenter(best) - currentCenter)
       ? candidate
       : best;
   }, null);
+  return targetCard?.querySelector(".gallery-select-button") || null;
 }
 
 async function selectGalleryItem(id) {
@@ -415,11 +427,12 @@ async function selectGalleryItem(id) {
   await renderDetail();
 }
 
-async function focusAndSelectCard(card) {
-  if (!card) return;
-  card.focus();
-  card.scrollIntoView({ block: "nearest", inline: "nearest" });
-  await selectGalleryItem(card.dataset.id);
+async function focusAndSelectButton(button) {
+  if (!button) return;
+  button.focus();
+  const card = button.closest(".gallery-card");
+  card?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  await selectGalleryItem(button.dataset.id);
 }
 
 function renderList() {
@@ -428,6 +441,19 @@ function renderList() {
   const end = offset + state.items.length;
   els.resultMeta.textContent =
     total === 0 ? "0 items" : `${start}-${end} of ${total} items`;
+  if (!state.items.length) {
+    if (mediaObserver) {
+      mediaObserver.disconnect();
+      mediaObserver = null;
+    }
+    els.list.innerHTML = `
+      <article class="empty-state">
+        <strong>No items match the current search and filters</strong>
+        <div class="subtle">Try a different search, re-enable more sources, or turn off some filters.</div>
+      </article>
+    `;
+    return;
+  }
   els.list.innerHTML = state.items
     .map((item) => {
       const title = displayTitle(item);
@@ -438,12 +464,17 @@ function renderList() {
         <article
           class="gallery-card ${item.id === state.selectedId ? "active" : ""}"
           data-id="${escapeHtml(item.id)}"
-          tabindex="0"
-          role="button"
-          aria-pressed="${item.id === state.selectedId ? "true" : "false"}"
-          aria-label="Open details for ${escapeHtml(title)}"
         >
           ${createMediaMarkup(item)}
+          <button
+            type="button"
+            class="gallery-select-button"
+            data-id="${escapeHtml(item.id)}"
+            aria-pressed="${item.id === state.selectedId ? "true" : "false"}"
+            aria-label="Open details for ${escapeHtml(title)}"
+          >
+            <span class="sr-only">Open details for ${escapeHtml(title)}</span>
+          </button>
           <div class="gallery-overlay">
             <div class="gallery-top">
               <div class="badge-row">
@@ -475,23 +506,16 @@ function renderList() {
     })
     .join("");
 
-  for (const card of els.list.querySelectorAll(".gallery-card")) {
-    card.addEventListener("click", async (event) => {
-      if (event.target.closest("a")) return;
-      await selectGalleryItem(card.dataset.id);
+  for (const button of gallerySelectButtons()) {
+    button.addEventListener("click", async () => {
+      await selectGalleryItem(button.dataset.id);
     });
-    card.addEventListener("keydown", async (event) => {
-      if (event.target !== card) return;
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        await selectGalleryItem(card.dataset.id);
-        return;
-      }
+    button.addEventListener("keydown", async (event) => {
       if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      const targetCard = findArrowNavigationTarget(card, event.key);
-      if (!targetCard) return;
+      const targetButton = findArrowNavigationTarget(button, event.key);
+      if (!targetButton) return;
       event.preventDefault();
-      await focusAndSelectCard(targetCard);
+      await focusAndSelectButton(targetButton);
     });
   }
 
@@ -673,9 +697,12 @@ function syncFiltersFromForm() {
 
 function applySourceFilter(source) {
   if (source === "all") {
-    const allSelected = SOURCE_ORDER.every((item) => state.filters.sources.includes(item));
-    state.filters.sources = allSelected ? [] : [...SOURCE_ORDER];
+    state.filters.sources = [...SOURCE_ORDER];
   } else if (state.filters.sources.includes(source)) {
+    if (state.filters.sources.length === 1) {
+      syncNavChips();
+      return;
+    }
     state.filters.sources = state.filters.sources.filter((item) => item !== source);
   } else {
     state.filters.sources = [...state.filters.sources, source].sort(
