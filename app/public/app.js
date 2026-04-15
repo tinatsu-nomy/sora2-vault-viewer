@@ -401,6 +401,14 @@ async function renderDetail() {
   const localMediaUrl = item.local?.mediaPath ? `/media?path=${encodeURIComponent(item.local.mediaPath)}` : null;
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
+  const summaryChips = [
+    item.date ? `<span class="detail-chip">${escapeHtml(item.date)}</span>` : "",
+    posterUsername ? `<span class="detail-chip accent">poster ${escapeHtml(posterUsername)}</span>` : "",
+    typeof item.likeCount === "number" ? `<span class="detail-chip">♥ ${escapeHtml(item.likeCount)}</span>` : "",
+    typeof item.viewCount === "number" ? `<span class="detail-chip">◉ ${escapeHtml(item.viewCount)}</span>` : "",
+  ]
+    .filter(Boolean)
+    .join("");
   const links = [
     item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">previewUrl</a>` : "",
     item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">downloadUrl</a>` : "",
@@ -419,8 +427,14 @@ async function renderDetail() {
         : `<div class="detail-card"><div class="subtle">No local MP4 was found. Use the external links below if needed.</div></div>`
     }
 
+    <div class="detail-hero">
+      <div class="detail-hero-kicker">Selected item</div>
+      <h3 class="detail-hero-title">${escapeHtml(displayTitle(item))}</h3>
+      <div class="detail-hero-chips">${summaryChips || '<span class="detail-chip">No summary metadata</span>'}</div>
+    </div>
+
     <div class="detail-card">
-      <h3>${escapeHtml(displayTitle(item))}</h3>
+      <h3>Overview</h3>
       <div class="detail-grid">
         <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceLabel(item.source))}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
