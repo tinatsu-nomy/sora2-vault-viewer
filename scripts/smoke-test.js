@@ -119,6 +119,16 @@ async function run() {
     const manifestSearchPayload = await manifestSearchResponse.json();
     assert.equal(manifestSearchPayload.items.length, 1, "Expected manifest-only metadata to be searchable");
 
+    const usernamePrefixSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=%40smoke`);
+    assert.equal(usernamePrefixSearchResponse.status, 200, "Expected @username prefix search to return 200");
+    const usernamePrefixSearchPayload = await usernamePrefixSearchResponse.json();
+    assert.equal(usernamePrefixSearchPayload.items.length, 1, "Expected @username prefix search to match manifest usernames");
+
+    const usernameNonPrefixSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=%40user`);
+    assert.equal(usernameNonPrefixSearchResponse.status, 200, "Expected non-prefix @username search to return 200");
+    const usernameNonPrefixSearchPayload = await usernameNonPrefixSearchResponse.json();
+    assert.equal(usernameNonPrefixSearchPayload.items.length, 0, "Expected non-prefix @username search not to match manifest usernames");
+
     const dateRangeHitResponse = await fetch(
       `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-15")}&dateTo=${encodeURIComponent("2026-04-15")}`,
     );

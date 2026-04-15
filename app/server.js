@@ -262,6 +262,39 @@ function slugForText(value) {
   return String(value).toLowerCase();
 }
 
+function parseSearchQuery(value) {
+  if (value == null) {
+    return {
+      textQuery: "",
+      usernamePrefixes: [],
+    };
+  }
+
+  const terms = String(value)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const textTerms = [];
+  const usernamePrefixes = [];
+
+  for (const term of terms) {
+    if (!term.startsWith("@")) {
+      textTerms.push(term);
+      continue;
+    }
+
+    const normalizedUsername = term.replace(/^@+/, "").trim();
+    if (normalizedUsername) {
+      usernamePrefixes.push(slugForText(normalizedUsername));
+    }
+  }
+
+  return {
+    textQuery: slugForText(textTerms.join(" ")),
+    usernamePrefixes,
+  };
+}
+
 function parseDateValue(value, { endOfDayIfDateOnly = false } = {}) {
   if (value == null || value === "") return null;
   if (value instanceof Date) {
@@ -829,7 +862,8 @@ function sendFile(response, filePath, contentType, extraHeaders = {}) {
 }
 
 function parseListParams(url) {
-  const query = slugForText(url.searchParams.get("query"));
+  const searchQuery = parseSearchQuery(url.searchParams.get("query"));
+  const query = searchQuery.textQuery;
   const source = url.searchParams.get("source");
   const hasSourcesParam = url.searchParams.has("sources");
   const sources = url.searchParams
@@ -850,6 +884,7 @@ function parseListParams(url) {
 
   return {
     query,
+    usernamePrefixes: searchQuery.usernamePrefixes,
     source,
     hasSourcesParam,
     sources,
@@ -995,6 +1030,34 @@ function serializeDetailItem(item) {
   };
 }
 
+function usernamePrefixLikePattern(prefix) {
+  return `${escapeLikePattern(prefix)}%`;
+}
+
+function usernameJsonPrefixLikePattern(prefix) {
+  return `%\"${escapeLikePattern(prefix)}%`;
+}
+
+function itemMatchesUsernamePrefixes(item, prefixes) {
+  if (!prefixes?.length) return true;
+  const usernames = new Set(
+    [
+      item?.posterUsername,
+      ...(item?.ownerUsernames || []),
+      ...(item?.cameoOwnerUsernames || []),
+    ]
+      .filter(Boolean)
+      .map((value) => slugForText(value)),
+  );
+
+  return prefixes.every((prefix) => {
+    for (const username of usernames) {
+      if (username.startsWith(prefix)) return true;
+    }
+    return false;
+  });
+}
+
 function listItemsFromDb(url) {
   const database = getDb();
   if (!database) return null;
@@ -1014,6 +1077,19 @@ function listItemsFromDb(url) {
       where.push("items.search_text LIKE ? ESCAPE '\\'");
       values.push(`%${escapeLikePattern(params.query)}%`);
     }
+  }
+
+  for (const prefix of params.usernamePrefixes) {
+    where.push(`(
+      LOWER(COALESCE(items.poster_username, '')) LIKE ? ESCAPE '\\'
+      OR LOWER(COALESCE(items.owner_usernames_json, '')) LIKE ? ESCAPE '\\'
+      OR LOWER(COALESCE(items.cameo_owner_usernames_json, '')) LIKE ? ESCAPE '\\'
+    )`);
+    values.push(
+      usernamePrefixLikePattern(prefix),
+      usernameJsonPrefixLikePattern(prefix),
+      usernameJsonPrefixLikePattern(prefix),
+    );
   }
 
   if (params.hasSourcesParam) {
@@ -1146,6 +1222,9 @@ function listItems(index, url) {
   const params = parseListParams(url);
   let filtered = index.items;
   if (params.query) filtered = filtered.filter((item) => item.searchText.includes(params.query));
+  if (params.usernamePrefixes.length) {
+    filtered = filtered.filter((item) => itemMatchesUsernamePrefixes(item, params.usernamePrefixes));
+  }
   if (params.hasSourcesParam) {
     const allowedSources = new Set(params.sources);
     filtered = filtered.filter((item) => allowedSources.has(item.source));
