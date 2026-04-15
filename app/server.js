@@ -438,9 +438,10 @@ function parseTxtRecord(filePath, sourceDirName) {
   };
 }
 
-function parseManifestItem(item, manifestPath, exportedAt) {
+function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   const post = item?._raw?.post || {};
   const attachment = post.attachments?.[0] || item?._raw || {};
+  const source = item.source || "unknown";
   const posterUsername = item?._raw?.profile?.username || null;
   const cameoOwnerUsernames = [
     ...(post.cameo_profiles || []).map((profile) => profile?.username),
@@ -465,19 +466,25 @@ function parseManifestItem(item, manifestPath, exportedAt) {
     }
   }
 
+  const generationId = item?._raw?.post?.attachments?.[0]?.generation_id || item?._raw?.generation_id || null;
+  const taskId = item.taskId || item?._raw?.task_id || null;
+  const postId = item.postId || item?._raw?.post?.id || null;
+  const preferredId = item.genId || generationId || postId || taskId;
+  const manifestStem = path.basename(manifestPath, path.extname(manifestPath));
+
   return {
-    id: `${item.source}:${item.genId || item.postId || item.taskId}`,
+    id: preferredId ? `${source}:${preferredId}` : `${source}:manifest:${manifestStem}:${itemIndex}`,
     kind: "manifest",
-    source: item.source || "",
+    source,
     date: item.date || null,
     prompt: item.prompt || item?._raw?.post?.text || item?._raw?.prompt || "",
     manifestExportedAt: exportedAt,
     manifestFile: manifestPath,
     mode: item.mode || null,
     genId: item.genId || null,
-    generationId: item?._raw?.post?.attachments?.[0]?.generation_id || item?._raw?.generation_id || null,
-    taskId: item.taskId || item?._raw?.task_id || null,
-    postId: item.postId || item?._raw?.post?.id || null,
+    generationId,
+    taskId,
+    postId,
     width: item.width || item?._raw?.width || null,
     height: item.height || item?._raw?.height || null,
     ratio: item.ratio || null,
@@ -579,6 +586,80 @@ function addLookup(map, key, entryId) {
   map.get(normalized).add(entryId);
 }
 
+function localAttachmentForGroup(group, localRecord) {
+  return {
+    mediaPath: group.mediaPath || null,
+    txtPath: group.txtPath || null,
+    txtEncoding: localRecord.encoding,
+    txtRaw: localRecord.rawText,
+    txtPrompt: localRecord.prompt,
+    parsed: {
+      generationId: localRecord.generationId,
+      taskId: localRecord.taskId,
+      postId: localRecord.postId,
+      date: localRecord.date,
+      duration: localRecord.duration,
+      resolution: localRecord.resolution,
+      aspectRatio: localRecord.aspectRatio,
+      liked: localRecord.liked,
+    },
+  };
+}
+
+function scoreLocalMatch(entry, localRecord) {
+  if (!entry || entry.source !== localRecord.source) return -1;
+
+  const entryLookupValues = new Set(
+    [
+      entry.id,
+      entry.genId,
+      entry.generationId,
+      entry.taskId,
+      entry.postId,
+      ...(entry.idTokens || []),
+    ]
+      .filter(Boolean)
+      .map((value) => slugForText(value)),
+  );
+
+  const exactIds = [
+    localRecord.generationId,
+    localRecord.postId,
+    localRecord.taskId,
+  ]
+    .filter(Boolean)
+    .map((value) => slugForText(value));
+
+  for (const value of exactIds) {
+    if (!entryLookupValues.has(value)) return -1;
+  }
+
+  let score = 0;
+  if (localRecord.generationId) score += 100;
+  if (localRecord.postId) score += 90;
+  if (localRecord.taskId) score += 80;
+
+  const localTokens = new Set(
+    [
+      ...localRecord.idTokens,
+      localRecord.stem,
+    ]
+      .filter(Boolean)
+      .map((value) => slugForText(value)),
+  );
+  for (const token of localTokens) {
+    if (entryLookupValues.has(token)) score += 10;
+  }
+
+  const localPrompt = slugForText(localRecord.prompt).trim();
+  const entryPrompt = slugForText(entry.prompt).trim();
+  if (localPrompt && entryPrompt && localPrompt === entryPrompt) {
+    score += 5;
+  }
+
+  return score;
+}
+
 function attachLocalFiles(entries, lookupMap) {
   const unmatchedLocals = [];
 
@@ -630,33 +711,27 @@ function attachLocalFiles(entries, lookupMap) {
         for (const id of bucket) candidateIds.add(id);
       }
 
-      let matched = false;
+      let matchedEntry = null;
+      let matchedScore = -1;
+      let matchedTie = false;
       for (const entryId of candidateIds) {
         const entry = entries.get(entryId);
-        if (!entry) continue;
-        const sameSource = entry.source === localRecord.source;
-        if (!sameSource) continue;
-        entry.local = {
-          mediaPath: group.mediaPath || null,
-          txtPath: group.txtPath || null,
-          txtEncoding: localRecord.encoding,
-          txtRaw: localRecord.rawText,
-          txtPrompt: localRecord.prompt,
-          parsed: {
-            generationId: localRecord.generationId,
-            taskId: localRecord.taskId,
-            postId: localRecord.postId,
-            date: localRecord.date,
-            duration: localRecord.duration,
-            resolution: localRecord.resolution,
-            aspectRatio: localRecord.aspectRatio,
-            liked: localRecord.liked,
-          },
-        };
-        matched = true;
+        const score = scoreLocalMatch(entry, localRecord);
+        if (score < 0) continue;
+        if (score > matchedScore) {
+          matchedEntry = entry;
+          matchedScore = score;
+          matchedTie = false;
+          continue;
+        }
+        if (score === matchedScore) {
+          matchedTie = true;
+        }
       }
 
-      if (!matched) {
+      if (matchedEntry && !matchedTie) {
+        matchedEntry.local = localAttachmentForGroup(group, localRecord);
+      } else {
         unmatchedLocals.push({
           id: `local:${source}:${localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem}`,
           kind: "local-only",
@@ -680,23 +755,7 @@ function attachLocalFiles(entries, lookupMap) {
           thumbUrl: null,
           raw: null,
           idTokens: localRecord.idTokens,
-          local: {
-            mediaPath: group.mediaPath || null,
-            txtPath: group.txtPath || null,
-            txtEncoding: localRecord.encoding,
-            txtRaw: localRecord.rawText,
-            txtPrompt: localRecord.prompt,
-            parsed: {
-              generationId: localRecord.generationId,
-              taskId: localRecord.taskId,
-              postId: localRecord.postId,
-              date: localRecord.date,
-              duration: localRecord.duration,
-              resolution: localRecord.resolution,
-              aspectRatio: localRecord.aspectRatio,
-              liked: localRecord.liked,
-            },
-          },
+          local: localAttachmentForGroup(group, localRecord),
         });
       }
     }
@@ -732,8 +791,8 @@ function buildIndex() {
       total: raw.total,
       scanSources: raw.scan_sources,
     });
-    for (const item of Array.isArray(raw.items) ? raw.items : []) {
-      const entry = parseManifestItem(item, manifestPath, raw.exported_at);
+    for (const [itemIndex, item] of (Array.isArray(raw.items) ? raw.items : []).entries()) {
+      const entry = parseManifestItem(item, manifestPath, raw.exported_at, itemIndex);
       entries.set(entry.id, entry);
       for (const token of [
         entry.id,
@@ -1398,21 +1457,29 @@ function handleRequest(request, response) {
 
 function startServer(port, attempt = 0) {
   const server = http.createServer(handleRequest);
+  let currentPort = port;
+  let currentAttempt = attempt;
 
-  server.once("error", (error) => {
-    if (error.code === "EADDRINUSE" && attempt < MAX_PORT_ATTEMPTS) {
-      const nextPort = port + 1;
-      console.warn(`Port ${port} is already in use. Retrying on ${nextPort}...`);
-      startServer(nextPort, attempt + 1);
+  function listenOnCurrentPort() {
+    server.listen(currentPort, BIND_HOST);
+  }
+
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE" && currentAttempt < MAX_PORT_ATTEMPTS) {
+      const occupiedPort = currentPort;
+      currentPort += 1;
+      currentAttempt += 1;
+      console.warn(`Port ${occupiedPort} is already in use. Retrying on ${currentPort}...`);
+      setImmediate(listenOnCurrentPort);
       return;
     }
 
     throw error;
   });
 
-  server.listen(port, BIND_HOST, () => {
+  server.listen(currentPort, BIND_HOST, () => {
     const address = server.address();
-    const actualPort = typeof address === "object" && address ? address.port : port;
+    const actualPort = typeof address === "object" && address ? address.port : currentPort;
     const displayHost = BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST;
     console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
     try {
