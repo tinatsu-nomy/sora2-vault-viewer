@@ -295,15 +295,9 @@ function parseTxtRecord(filePath, sourceDirName) {
 function parseManifestItem(item, manifestPath, exportedAt) {
   const post = item?._raw?.post || {};
   const attachment = post.attachments?.[0] || item?._raw || {};
-  const posterUsername =
-    post.owner_profile?.username ||
-    post.shared_by_profile?.username ||
-    post.original_poster?.username ||
-    item?._raw?.owner_profile?.username ||
-    item?._raw?.profile?.owner_profile?.username ||
-    null;
+  const posterUsername = item?._raw?.profile?.username || null;
   const cameoOwnerUsernames = [
-    ...(post.cameo_profiles || []).map((profile) => profile?.owner_profile?.username),
+    ...(post.cameo_profiles || []).map((profile) => profile?.username),
   ].filter(Boolean);
   const uniqueCameoOwnerUsernames = [...new Set(cameoOwnerUsernames)].filter((username) => username !== posterUsername);
   const ownerUsernames = [

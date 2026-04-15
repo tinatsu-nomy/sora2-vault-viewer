@@ -339,7 +339,7 @@ function renderList() {
               <div class="meta-row">
                 ${item.date ? `<span class="meta-pill">${escapeHtml(item.date)}</span>` : ""}
                 ${item.duration ? `<span class="meta-pill">${escapeHtml(String(item.duration))}s</span>` : ""}
-                ${posterUsername ? `<span class="meta-pill">poster ${escapeHtml(posterUsername)}</span>` : ""}
+                ${posterUsername ? `<span class="meta-pill">posted by ${escapeHtml(posterUsername)}</span>` : ""}
                 ${state.filters.showCameo && cameoUsernames ? `<span class="meta-pill">cameo ${escapeHtml(cameoUsernames)}</span>` : ""}
               </div>
               <div class="card-links">
@@ -407,7 +407,7 @@ async function renderDetail() {
   const cameoUsernames = formatCameoUsernames(item);
   const summaryChips = [
     item.date ? `<span class="detail-chip">${escapeHtml(item.date)}</span>` : "",
-    posterUsername ? `<span class="detail-chip accent">poster ${escapeHtml(posterUsername)}</span>` : "",
+    posterUsername ? `<span class="detail-chip accent">posted by ${escapeHtml(posterUsername)}</span>` : "",
     typeof item.likeCount === "number" ? `<span class="detail-chip">♥ ${escapeHtml(item.likeCount)}</span>` : "",
     typeof item.viewCount === "number" ? `<span class="detail-chip">◉ ${escapeHtml(item.viewCount)}</span>` : "",
   ]
@@ -442,7 +442,7 @@ async function renderDetail() {
       <div class="detail-grid">
         <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceLabel(item.source))}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row"><span>poster</span><strong>${escapeHtml(posterUsername)}</strong></div>
+        <div class="detail-row"><span>posted by</span><strong>${escapeHtml(posterUsername)}</strong></div>
         ${
           state.filters.showCameo
             ? `<div class="detail-row"><span>cameo</span><strong>${escapeHtml(cameoUsernames)}</strong></div>`
