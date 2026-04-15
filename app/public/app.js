@@ -55,15 +55,12 @@ let mediaObserver = null;
 let detailRequestToken = 0;
 let indexRequestToken = 0;
 let searchDebounceTimer = null;
-let galleryPrimePromise = Promise.resolve();
-let galleryBackgroundPrimePromise = Promise.resolve();
 const pageCache = new Map();
 const detailCache = new Map();
 const pagePrefetchInFlight = new Map();
 const MAX_PAGE_CACHE_ENTRIES = 18;
 const MAX_DETAIL_CACHE_ENTRIES = 120;
 const MIN_PAGE_BUTTON_LOADING_MS = 180;
-const CRITICAL_GALLERY_VIDEO_COUNT = 12;
 
 const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
@@ -159,7 +156,7 @@ function pendingPageNumber() {
 function showPageLoadingModal() {
   const pageNumber = pendingPageNumber();
   els.pageLoadingTitle.textContent = `Loading page ${pageNumber}...`;
-  els.pageLoadingMessage.textContent = "Preparing all videos for this page.";
+  els.pageLoadingMessage.textContent = "Updating the gallery and selected details.";
   els.pageLoadingModal.classList.remove("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "false");
 }
@@ -177,6 +174,21 @@ function setSectionLoading(section, isLoading, message = "Loading...") {
     section.dataset.loadingLabel = message;
   } else {
     section.dataset.loadingLabel = "";
+  }
+}
+
+function releaseGalleryMedia() {
+  if (mediaObserver) {
+    mediaObserver.disconnect();
+    mediaObserver = null;
+  }
+
+  for (const video of els.list.querySelectorAll(".gallery-video")) {
+    pauseGalleryVideo(video);
+    video.removeAttribute("src");
+    video.load();
+    delete video.dataset.loaded;
+    video.classList.remove("is-visible");
   }
 }
 
@@ -299,7 +311,6 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
 
   if (useCache && pageCache.has(queryString)) {
     applyIndexPayload(pageCache.get(queryString));
-    await galleryPrimePromise;
     void renderDetail();
     prefetchNeighborPages();
     return;
@@ -323,7 +334,6 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
 
     rememberPageCache(queryString, payload);
     applyIndexPayload(payload);
-    await galleryPrimePromise;
     await renderDetail();
     prefetchNeighborPages();
   } catch (error) {
@@ -404,7 +414,7 @@ function createMediaMarkup(item) {
           muted
           loop
           playsinline
-          preload="metadata"
+          preload="none"
         ></video>
       </div>
     `;
@@ -431,54 +441,9 @@ function loadGalleryVideo(video) {
   video.load();
 }
 
-function waitForGalleryVideoReady(video) {
-  if (!video) return Promise.resolve();
-  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
-  return new Promise((resolve) => {
-    const finish = () => {
-      video.removeEventListener("loadedmetadata", finish);
-      video.removeEventListener("error", finish);
-      resolve();
-    };
-    video.addEventListener("loadedmetadata", finish, { once: true });
-    video.addEventListener("error", finish, { once: true });
-  });
-}
-
-function waitForGalleryVideosReady(videos) {
-  return Promise.all(videos.map((video) => waitForGalleryVideoReady(video)));
-}
-
 function pauseGalleryVideo(video) {
   if (!video) return;
   video.pause();
-}
-
-function galleryVideoGroups() {
-  const videos = [...els.list.querySelectorAll(".gallery-video")];
-  return {
-    criticalVideos: videos.slice(0, CRITICAL_GALLERY_VIDEO_COUNT),
-    remainingVideos: videos.slice(CRITICAL_GALLERY_VIDEO_COUNT),
-  };
-}
-
-function loadGalleryVideos(videos) {
-  for (const video of videos) {
-    loadGalleryVideo(video);
-  }
-}
-
-function primeCriticalGalleryVideos(videos) {
-  loadGalleryVideos(videos);
-  return waitForGalleryVideosReady(videos);
-}
-
-function primeRemainingGalleryVideos(videos) {
-  if (!videos.length) return Promise.resolve();
-  return delay(120).then(() => {
-    loadGalleryVideos(videos);
-    return Promise.allSettled(videos.map((video) => waitForGalleryVideoReady(video)));
-  });
 }
 
 function syncGalleryPlayback() {
@@ -623,10 +588,7 @@ function renderList() {
   els.resultMeta.textContent =
     total === 0 ? "0 items" : `${start}-${end} of ${total} items`;
   if (!state.items.length) {
-    if (mediaObserver) {
-      mediaObserver.disconnect();
-      mediaObserver = null;
-    }
+    releaseGalleryMedia();
     els.list.innerHTML = `
       <article class="empty-state">
         <strong>No items match the current search and filters</strong>
@@ -700,9 +662,6 @@ function renderList() {
     });
   }
 
-  const { criticalVideos, remainingVideos } = galleryVideoGroups();
-  galleryPrimePromise = primeCriticalGalleryVideos(criticalVideos);
-  galleryBackgroundPrimePromise = galleryPrimePromise.then(() => primeRemainingGalleryVideos(remainingVideos));
   setupGalleryMediaObserver();
 }
 
@@ -762,6 +721,7 @@ function renderPagination() {
       renderPagination();
       showPageLoadingModal();
       syncFiltersFromForm();
+      releaseGalleryMedia();
       try {
         await fetchIndex({ reason: "page" });
         window.scrollTo({ top: 0, behavior: "smooth" });
