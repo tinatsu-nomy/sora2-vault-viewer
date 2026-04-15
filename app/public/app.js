@@ -82,7 +82,13 @@ function formatJson(value) {
 }
 
 function displayTitle(item) {
-  return item.prompt || item.posterUsername || "Untitled video";
+  const prompt = String(item?.prompt || "").trim();
+  if (prompt) return prompt;
+
+  const localPrompt = String(item?.local?.txtPrompt || "").trim();
+  if (localPrompt) return localPrompt;
+
+  return item?.genId || item?.postId || item?.taskId || "Untitled video";
 }
 
 function formatPosterUsername(item) {
@@ -295,6 +301,7 @@ function renderIndexError(message) {
     hasNext: false,
   };
   state.selectedId = null;
+  setSectionLoading(els.detailSection, false);
   els.stats.innerHTML = `
     <article class="summary-card db-card">
       <strong>Index Error</strong>
@@ -749,6 +756,7 @@ function renderPagination() {
 
 async function renderDetail() {
   if (!state.selectedId) {
+    setSectionLoading(els.detailSection, false);
     els.detail.innerHTML = "Select a card to see its details here.";
     return;
   }

@@ -1,3 +1,13 @@
+const runtime = require("./server_runtime");
+
+if (require.main === module) {
+  runtime.startServer();
+}
+
+module.exports = runtime;
+
+if (false) {
+
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
@@ -1504,3 +1514,4 @@ if (require.main === module) {
 module.exports = {
   startServer,
 };
+}

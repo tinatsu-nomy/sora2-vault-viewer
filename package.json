@@ -4,7 +4,7 @@
   "private": true,
   "description": "Local viewer for Sora 2 manifests and exported media/text data",
   "scripts": {
-    "check": "node --check app/server.js && node --check app/public/app.js",
+    "check": "node --check app/server.js && node --check app/server_runtime.js && node --check app/indexer.js && node --check app/store.js && node --check app/public/app.js",
     "start": "node app/server.js",
     "test": "node scripts/smoke-test.js"
   }
