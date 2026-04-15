@@ -5,7 +5,7 @@ const { URL } = require("url");
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "2";
+const SQLITE_SCHEMA_VERSION = "3";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE === "1";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
@@ -85,6 +85,7 @@ function getDb() {
         source TEXT,
         kind TEXT,
         date TEXT,
+        date_sort_ms INTEGER,
         prompt TEXT,
         gen_id TEXT,
         generation_id TEXT,
@@ -113,6 +114,7 @@ function getDb() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_items_source_date ON items(source, date);
+      CREATE INDEX IF NOT EXISTS idx_items_date_sort_ms ON items(date_sort_ms);
       CREATE INDEX IF NOT EXISTS idx_items_post_id ON items(post_id);
       CREATE INDEX IF NOT EXISTS idx_items_task_id ON items(task_id);
       CREATE INDEX IF NOT EXISTS idx_items_generation_id ON items(generation_id);
@@ -150,13 +152,13 @@ function persistIndexToDb(index) {
   try {
     const insert = database.prepare(`
       INSERT OR REPLACE INTO items (
-        id, source, kind, date, prompt, gen_id, generation_id, task_id, post_id,
+        id, source, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
         poster_username, owner_usernames_json, cameo_owner_usernames_json,
         duration, duration_sort, ratio, width, height, like_count, view_count,
         is_liked, has_local_media, has_local_text, thumb_url, preview_url, download_url,
         local_media_path, local_txt_path, search_text, detail_json
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
@@ -180,6 +182,7 @@ function persistIndexToDb(index) {
         item.source,
         item.kind,
         item.date,
+        item.dateSortMs,
         item.prompt,
         item.genId,
         item.generationId,
@@ -257,6 +260,52 @@ function walkFiles(dirPath) {
 function slugForText(value) {
   if (!value) return "";
   return String(value).toLowerCase();
+}
+
+function parseDateValue(value, { endOfDayIfDateOnly = false } = {}) {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const dateOnlyMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsed = endOfDayIfDateOnly
+      ? new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59, 999)
+      : new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
+    const timestamp = parsed.getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  const localDateTimeMatch = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/,
+  );
+  if (localDateTimeMatch) {
+    const [, year, month, day, hour, minute, second = "0", fraction = "0"] = localDateTimeMatch;
+    const milliseconds = Number(fraction.padEnd(3, "0").slice(0, 3));
+    const parsed = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+      milliseconds,
+    );
+    const timestamp = parsed.getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function basenameWithoutExt(filePath) {
@@ -669,6 +718,7 @@ function buildIndex() {
   attachLocalFiles(entries, lookupMap);
 
   const items = [...entries.values()].map((entry) => {
+    const dateSortMs = parseDateValue(entry.date);
     const searchText = [
       entry.prompt,
       entry.source,
@@ -690,6 +740,7 @@ function buildIndex() {
 
     return {
       ...entry,
+      dateSortMs,
       hasLocalMedia: Boolean(entry.local?.mediaPath),
       hasLocalText: Boolean(entry.local?.txtPath),
       searchText,
@@ -697,9 +748,7 @@ function buildIndex() {
   });
 
   items.sort((a, b) => {
-    const left = `${b.date || ""}|${b.id}`;
-    const right = `${a.date || ""}|${a.id}`;
-    return left.localeCompare(right);
+    return (b.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (a.dateSortMs ?? Number.MIN_SAFE_INTEGER) || b.id.localeCompare(a.id);
   });
 
   const stats = {
@@ -791,6 +840,8 @@ function parseListParams(url) {
   const localOnly = url.searchParams.get("localOnly") === "1";
   const withText = url.searchParams.get("withText") === "1";
   const withMedia = url.searchParams.get("withMedia") === "1";
+  const dateFrom = parseDateValue(url.searchParams.get("dateFrom"));
+  const dateTo = parseDateValue(url.searchParams.get("dateTo"), { endOfDayIfDateOnly: true });
   const sort = url.searchParams.get("sort") || "date-desc";
   const requestedLimit = Number(url.searchParams.get("limit") || 180);
   const requestedOffset = Number(url.searchParams.get("offset") || 0);
@@ -805,6 +856,8 @@ function parseListParams(url) {
     localOnly,
     withText,
     withMedia,
+    dateFrom,
+    dateTo,
     sort,
     limit,
     offset,
@@ -988,21 +1041,29 @@ function listItemsFromDb(url) {
   if (params.localOnly) where.push("(items.has_local_media = 1 OR items.has_local_text = 1)");
   if (params.withText) where.push("items.has_local_text = 1");
   if (params.withMedia) where.push("items.has_local_media = 1");
+  if (params.dateFrom != null) {
+    where.push("items.date_sort_ms IS NOT NULL AND items.date_sort_ms >= ?");
+    values.push(params.dateFrom);
+  }
+  if (params.dateTo != null) {
+    where.push("items.date_sort_ms IS NOT NULL AND items.date_sort_ms <= ?");
+    values.push(params.dateTo);
+  }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const fromClause = `FROM items ${joins.join(" ")}`;
   const orderBy = (() => {
     switch (params.sort) {
       case "date-asc":
-        return "ORDER BY COALESCE(items.date, ''), items.id";
+        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
       case "views-desc":
-        return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date, '') DESC, items.id DESC";
+        return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
       case "views-asc":
-        return "ORDER BY COALESCE(items.view_count, 0) ASC, COALESCE(items.date, '') ASC, items.id ASC";
+        return "ORDER BY COALESCE(items.view_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
       case "likes-desc":
-        return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date, '') DESC, items.id DESC";
+        return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
       case "likes-asc":
-        return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date, '') ASC, items.id ASC";
+        return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
       case "prompt-asc":
         return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE ASC, items.id ASC";
       case "prompt-desc":
@@ -1019,12 +1080,12 @@ function listItemsFromDb(url) {
             WHEN 'v2_drafts' THEN 2
             ELSE 9
           END ASC,
-          COALESCE(items.date, '') ASC,
+          COALESCE(items.date_sort_ms, -9223372036854775808) ASC,
           items.id ASC
         `;
       case "date-desc":
       default:
-        return "ORDER BY COALESCE(items.date, '') DESC, items.id DESC";
+        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
     }
   })();
 
@@ -1094,6 +1155,8 @@ function listItems(index, url) {
   if (params.localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
   if (params.withText) filtered = filtered.filter((item) => item.hasLocalText);
   if (params.withMedia) filtered = filtered.filter((item) => item.hasLocalMedia);
+  if (params.dateFrom != null) filtered = filtered.filter((item) => item.dateSortMs != null && item.dateSortMs >= params.dateFrom);
+  if (params.dateTo != null) filtered = filtered.filter((item) => item.dateSortMs != null && item.dateSortMs <= params.dateTo);
 
   const sorted = [...filtered];
   sorted.sort((left, right) => {
@@ -1105,15 +1168,15 @@ function listItems(index, url) {
     const rightLikes = Number(right.likeCount || 0);
     switch (params.sort) {
       case "date-asc":
-        return `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
+        return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
       case "views-desc":
-        return rightViews - leftViews || `${right.date || ""}|${right.id}`.localeCompare(`${left.date || ""}|${left.id}`);
+        return rightViews - leftViews || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
       case "views-asc":
-        return leftViews - rightViews || `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
+        return leftViews - rightViews || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
       case "likes-desc":
-        return rightLikes - leftLikes || `${right.date || ""}|${right.id}`.localeCompare(`${left.date || ""}|${left.id}`);
+        return rightLikes - leftLikes || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
       case "likes-asc":
-        return leftLikes - rightLikes || `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
+        return leftLikes - rightLikes || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
       case "prompt-asc":
         return leftPrompt.localeCompare(rightPrompt, "ja");
       case "prompt-desc":
@@ -1122,11 +1185,14 @@ function listItems(index, url) {
         return Number(left.duration || 0) - Number(right.duration || 0);
       case "duration-desc":
         return Number(right.duration || 0) - Number(left.duration || 0);
-      case "source-asc":
-        return `${left.source}|${left.date || ""}|${left.id}`.localeCompare(`${right.source}|${right.date || ""}|${right.id}`, "ja");
+      case "source-asc": {
+        const sourceOrder = SOURCE_ORDER.indexOf(left.source) - SOURCE_ORDER.indexOf(right.source);
+        if (sourceOrder !== 0) return sourceOrder;
+        return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+      }
       case "date-desc":
       default:
-        return `${right.date || ""}|${right.id}`.localeCompare(`${left.date || ""}|${left.id}`);
+        return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
     }
   });
 

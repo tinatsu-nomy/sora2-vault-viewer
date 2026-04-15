@@ -16,10 +16,12 @@ const state = {
     query: "",
     sources: ["v2_profile", "v2_liked", "v2_drafts"],
     sort: "date-desc",
+    dateFrom: "",
+    dateTo: "",
     localOnly: true,
     withText: false,
     withMedia: false,
-    showCameo: false,
+    showCameo: true,
   },
 };
 
@@ -27,6 +29,9 @@ const els = {
   query: document.querySelector("#query"),
   sort: document.querySelector("#sort"),
   pageSize: document.querySelector("#pageSize"),
+  dateFrom: document.querySelector("#dateFrom"),
+  dateTo: document.querySelector("#dateTo"),
+  resetDateButton: document.querySelector("#resetDateButton"),
   localOnly: document.querySelector("#localOnly"),
   withText: document.querySelector("#withText"),
   withMedia: document.querySelector("#withMedia"),
@@ -201,6 +206,8 @@ function pageQueryStringForOffset(offset) {
   if (state.filters.query) params.set("query", state.filters.query);
   if (state.filters.sources.length !== SOURCE_ORDER.length) params.set("sources", state.filters.sources.join(","));
   if (state.filters.sort) params.set("sort", state.filters.sort);
+  if (state.filters.dateFrom) params.set("dateFrom", state.filters.dateFrom);
+  if (state.filters.dateTo) params.set("dateTo", state.filters.dateTo);
   if (state.filters.localOnly) params.set("localOnly", "1");
   if (state.filters.withText) params.set("withText", "1");
   if (state.filters.withMedia) params.set("withMedia", "1");
@@ -265,6 +272,8 @@ function buildQueryString() {
   if (state.filters.query) params.set("query", state.filters.query);
   if (state.filters.sources.length !== SOURCE_ORDER.length) params.set("sources", state.filters.sources.join(","));
   if (state.filters.sort) params.set("sort", state.filters.sort);
+  if (state.filters.dateFrom) params.set("dateFrom", state.filters.dateFrom);
+  if (state.filters.dateTo) params.set("dateTo", state.filters.dateTo);
   if (state.filters.localOnly) params.set("localOnly", "1");
   if (state.filters.withText) params.set("withText", "1");
   if (state.filters.withMedia) params.set("withMedia", "1");
@@ -880,10 +889,27 @@ function syncFiltersFromForm() {
   state.filters.query = els.query.value.trim();
   state.filters.sort = els.sort.value;
   state.pagination.limit = Number(els.pageSize.value || state.pagination.limit);
+  state.filters.dateFrom = els.dateFrom.value;
+  state.filters.dateTo = els.dateTo.value;
   state.filters.localOnly = els.localOnly.checked;
   state.filters.withText = els.withText.checked;
   state.filters.withMedia = els.withMedia.checked;
   state.filters.showCameo = els.showCameo.checked;
+}
+
+function updateDateResetButton() {
+  const hasDateFilter = Boolean(els.dateFrom.value || els.dateTo.value);
+  els.resetDateButton.disabled = !hasDateFilter;
+}
+
+async function clearDateFilters() {
+  clearSearchDebounce();
+  els.dateFrom.value = "";
+  els.dateTo.value = "";
+  updateDateResetButton();
+  resetPagination();
+  clearDataCaches();
+  await refresh();
 }
 
 function applySourceFilter(source) {
@@ -972,6 +998,37 @@ els.pageSize.addEventListener("change", async () => {
   await refresh();
 });
 
+for (const input of [els.dateFrom, els.dateTo]) {
+  input.addEventListener("input", () => {
+    updateDateResetButton();
+    clearSearchDebounce();
+    searchDebounceTimer = setTimeout(async () => {
+      searchDebounceTimer = null;
+      resetPagination();
+      clearDataCaches();
+      await refresh();
+    }, 220);
+  });
+  input.addEventListener("change", async () => {
+    updateDateResetButton();
+    clearSearchDebounce();
+    resetPagination();
+    clearDataCaches();
+    await refresh();
+  });
+  input.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    clearSearchDebounce();
+    resetPagination();
+    clearDataCaches();
+    await refresh();
+  });
+}
+
+els.resetDateButton.addEventListener("click", async () => {
+  await clearDateFilters();
+});
+
 for (const chip of els.navChips) {
   chip.addEventListener("click", () => {
     applySourceFilter(chip.dataset.source);
@@ -1034,4 +1091,5 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+updateDateResetButton();
 refresh();

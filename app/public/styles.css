@@ -103,7 +103,7 @@ h2 {
   background: transparent;
   color: var(--muted);
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 12px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
@@ -122,16 +122,17 @@ h2 {
 .toolbar {
   border: 1px solid var(--line);
   background: rgba(16, 16, 20, 0.82);
-  border-radius: 24px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
 }
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 2.2fr) repeat(2, minmax(160px, 0.9fr)) repeat(4, auto) minmax(140px, auto);
-  gap: 12px;
+  grid-template-columns: minmax(280px, 2.2fr) repeat(4, max-content) repeat(4, auto) max-content;
+  gap: 10px;
   align-items: end;
+  justify-content: start;
   padding: 16px;
 }
 
@@ -139,6 +140,24 @@ h2 {
 .toggle {
   display: grid;
   gap: 7px;
+}
+
+.field.compact-half {
+  width: 50%;
+  min-width: 88px;
+  justify-self: start;
+}
+
+.field.compact-two-thirds {
+  width: 66.6667%;
+  min-width: 132px;
+  justify-self: start;
+}
+
+.field.compact-half select,
+.field.compact-two-thirds input,
+.field.compact-two-thirds select {
+  width: 100%;
 }
 
 .search-row {
@@ -166,7 +185,7 @@ h2 {
 input,
 select {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   padding: 12px 14px;
@@ -189,7 +208,7 @@ input::placeholder {
 
 button {
   border: 0;
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 12px 16px;
   background: white;
   color: #050506;
@@ -205,6 +224,11 @@ button.secondary {
 button:disabled {
   opacity: 0.68;
   cursor: progress;
+}
+
+#resetDateButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .toolbar-actions {
@@ -243,7 +267,7 @@ button:disabled {
 
 .modal-card {
   width: min(420px, 100%);
-  border-radius: 22px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -294,7 +318,7 @@ button:disabled {
 .summary-card {
   border: 1px solid var(--line);
   background: rgba(16, 16, 20, 0.78);
-  border-radius: 18px;
+  border-radius: 12px;
   padding: 10px 12px;
 }
 
@@ -327,7 +351,7 @@ button:disabled {
   padding: 18px;
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 24px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 36%),
     rgba(16, 16, 20, 0.82);
@@ -360,7 +384,7 @@ button:disabled {
   top: 14px;
   right: 16px;
   z-index: 3;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 6px 10px;
   background: rgba(7, 8, 12, 0.76);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -403,13 +427,13 @@ button:disabled {
   margin-top: 18px;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(16, 16, 20, 0.62);
 }
 
 .empty-state {
   border: 1px dashed rgba(255, 255, 255, 0.18);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 28px 20px;
   background: rgba(255, 255, 255, 0.02);
   color: var(--text);
@@ -554,7 +578,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 5px 9px;
   background: rgba(0, 0, 0, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -596,7 +620,7 @@ button:disabled {
 
 .detail-player {
   width: 100%;
-  border-radius: 18px;
+  border-radius: 12px;
   overflow: hidden;
   background: #000;
   border: 1px solid var(--line);
@@ -610,7 +634,7 @@ button:disabled {
 .detail-hero {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -643,7 +667,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 7px 11px;
   background: rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -660,7 +684,7 @@ button:disabled {
 .detail-card {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 14px;
 }
@@ -687,7 +711,7 @@ button:disabled {
 .prompt-box {
   white-space: pre-wrap;
   word-break: break-word;
-  border-radius: 14px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.04);

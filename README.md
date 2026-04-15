@@ -11,7 +11,7 @@ This project assumes the data structure produced by [SoraVault 2.0](https://gith
 - Merges all `soravault_manifest_*.json` files found in `sora2_data/`
 - Matches manifest items with local files from `sora_v2_profile`, `sora_v2_liked`, and `sora_v2_drafts`
 - Plays local videos inline in a dark gallery UI with a right-side details panel
-- Searches by prompt, `genId`, `postId`, `taskId`, and TXT content with auto-apply filtering
+- Searches by prompt, `genId`, `postId`, `taskId`, TXT content, and date range with auto-apply filtering
 - Supports pagination, page size selection, source filtering, and sorting by date, prompt, duration, views, likes, and source order
 - Supports keyboard browsing across gallery cards with `Tab`, `Enter`, `Space`, and arrow keys
 - Shows manifest-derived metadata such as `posted by`, likes, views, loaded manifest names, and TXT content

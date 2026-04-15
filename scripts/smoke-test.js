@@ -119,6 +119,20 @@ async function run() {
     const manifestSearchPayload = await manifestSearchResponse.json();
     assert.equal(manifestSearchPayload.items.length, 1, "Expected manifest-only metadata to be searchable");
 
+    const dateRangeHitResponse = await fetch(
+      `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-15")}&dateTo=${encodeURIComponent("2026-04-15")}`,
+    );
+    assert.equal(dateRangeHitResponse.status, 200, "Expected date range search to return 200");
+    const dateRangeHitPayload = await dateRangeHitResponse.json();
+    assert.equal(dateRangeHitPayload.items.length, 1, "Expected the fixture item to match its own date range");
+
+    const dateRangeMissResponse = await fetch(
+      `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-16")}`,
+    );
+    assert.equal(dateRangeMissResponse.status, 200, "Expected out-of-range date search to return 200");
+    const dateRangeMissPayload = await dateRangeMissResponse.json();
+    assert.equal(dateRangeMissPayload.items.length, 0, "Expected out-of-range date filtering to exclude the fixture item");
+
     const detailResponse = await fetch(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(indexPayload.items[0].id)}`,
     );
