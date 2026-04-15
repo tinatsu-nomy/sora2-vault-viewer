@@ -100,23 +100,25 @@ function getDb() {
 function persistIndexToDb(index) {
   const database = getDb();
   if (!database) return;
-  const insert = database.prepare(`
-    INSERT OR REPLACE INTO items (
-      id, source, kind, date, prompt, gen_id, generation_id, task_id, post_id,
-      duration, ratio, width, height, is_liked, has_local_media, has_local_text,
-      thumb_url, preview_url, local_media_path, local_txt_path, payload_json
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?
-    )
-  `);
-  const setMeta = database.prepare(`
-    INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
-  `);
-
-  database.exec("BEGIN");
+  let txActive = false;
   try {
+    const insert = database.prepare(`
+      INSERT OR REPLACE INTO items (
+        id, source, kind, date, prompt, gen_id, generation_id, task_id, post_id,
+        duration, ratio, width, height, is_liked, has_local_media, has_local_text,
+        thumb_url, preview_url, local_media_path, local_txt_path, payload_json
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?
+      )
+    `);
+    const setMeta = database.prepare(`
+      INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
+    `);
+
+    database.exec("BEGIN");
+    txActive = true;
     database.exec("DELETE FROM items");
     for (const item of index.items) {
       insert.run(
@@ -147,6 +149,7 @@ function persistIndexToDb(index) {
     setMeta.run("totalItems", String(index.stats.totalItems));
     setMeta.run("dbPath", DB_PATH);
     database.exec("COMMIT");
+    txActive = false;
     dbStatus = {
       enabled: true,
       path: DB_PATH,
@@ -154,7 +157,11 @@ function persistIndexToDb(index) {
       error: null,
     };
   } catch (error) {
-    database.exec("ROLLBACK");
+    if (txActive) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {}
+    }
     dbStatus = {
       enabled: false,
       path: DB_PATH,
