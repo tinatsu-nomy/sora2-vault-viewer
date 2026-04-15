@@ -22,6 +22,13 @@ Requirements:
 - Node.js 22.13+
 - Verified in practice with Node.js 24
 
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/tinatsu-nomy/sora2-vault-viewer.git
+cd sora2-vault-viewer
+```
+
 Project structure:
 
 ```text
@@ -38,7 +45,17 @@ sora2_data/
   sora_v2_drafts/
 ```
 
-Run:
+Place your exported data under `sora2_data/` so the layout looks like this:
+
+```text
+sora2_data/
+  soravault_manifest_*.json
+  sora_v2_profile/
+  sora_v2_liked/
+  sora_v2_drafts/
+```
+
+Then start the viewer:
 
 ```powershell
 npm start
