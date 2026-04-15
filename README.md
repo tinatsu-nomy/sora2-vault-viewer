@@ -49,11 +49,28 @@ The app starts at `http://localhost:3210` by default and automatically moves to 
 Optional environment variables:
 - `PORT`: starting port for the local server
 - `SORA_BIND_HOST`: bind host for the HTTP server. Defaults to `127.0.0.1`
-- `SORA_VIEWER_ROOT`: override the repository root
 - `SORA_DATA_DIR`: override the data directory location
-- `SORA_SQLITE_PATH`: override the SQLite cache file path
-- `SORA_ENABLE_SQLITE_CACHE=1`: opt in to SQLite cache writes
-- `SORA_VIEWER_DEBUG=1`: expose debug-only fields such as raw manifest JSON, local file paths, and external media links
+- `SORA_VIEWER_ROOT`: override the repository root when `sora2_data/` lives directly under a different parent directory
+
+Common examples:
+
+```powershell
+# default
+npm start
+```
+
+```powershell
+# custom data directory
+$env:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
+npm start
+```
+
+```powershell
+# custom port
+$env:PORT = "3211"
+$env:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
+npm start
+```
 
 ## Data Layout
 
@@ -92,8 +109,6 @@ If these conditions are not met, the files can still appear as `local-only` item
 - Malformed or partially written manifest JSON files are skipped and recorded instead of terminating the viewer
 - Index, detail, rebuild, and media failures are surfaced as recoverable UI or API errors instead of silently breaking the app
 - The `/media` endpoint serves only indexed local `mp4` and `txt` files
-- Raw manifest JSON, absolute local file paths, and external media links are hidden unless `SORA_VIEWER_DEBUG=1`
-- SQLite cache support is optional and disabled by default; the viewer continues working even if SQLite is unavailable
 - Sora 1 data is not supported because no Sora 1 export data was available for development or validation
 
 ## Troubleshooting
