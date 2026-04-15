@@ -6,8 +6,6 @@ app/data/
 
 # Local logs and scratch files
 *.log
-*.sqlite
-*.sqlite-journal
 _backups/
 
 # OS/editor noise

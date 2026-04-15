@@ -1,11 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
-const { DatabaseSync } = require("node:sqlite");
 const { URL } = require("url");
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
+const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
+const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE === "1";
+const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
 const ROOT = process.env.SORA_VIEWER_ROOT
   ? path.resolve(process.env.SORA_VIEWER_ROOT)
   : path.resolve(__dirname, "..");
@@ -29,11 +31,12 @@ const TEXT_DECODERS = [
 
 let cachedIndex = null;
 let db = null;
+let DatabaseSync = null;
 let dbStatus = {
-  enabled: true,
+  enabled: false,
   path: DB_PATH,
   savedItems: 0,
-  error: null,
+  error: ENABLE_SQLITE_CACHE ? null : "disabled by default",
 };
 
 function listManifestFiles() {
@@ -45,20 +48,19 @@ function listManifestFiles() {
     .sort();
 }
 
-function normalizePathForLookup(filePath) {
-  const resolved = path.resolve(filePath);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-}
-
 function isPathInside(parentDir, targetPath) {
   const relative = path.relative(parentDir, targetPath);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function getDb() {
+  if (!ENABLE_SQLITE_CACHE) return null;
   if (db) return db;
   fs.mkdirSync(APP_DATA_DIR, { recursive: true });
   try {
+    if (!DatabaseSync) {
+      ({ DatabaseSync } = require("node:sqlite"));
+    }
     db = new DatabaseSync(DB_PATH);
     db.exec(`
       CREATE TABLE IF NOT EXISTS cache_meta (
@@ -551,7 +553,6 @@ function buildIndex() {
       entry.taskId,
       entry.postId,
       entry.local?.txtRaw,
-      entry.local?.mediaPath,
     ]
       .filter(Boolean)
       .join("\n")
@@ -564,12 +565,6 @@ function buildIndex() {
       searchText,
     };
   });
-
-  const allowedLocalPaths = new Set();
-  for (const item of items) {
-    if (item.local?.mediaPath) allowedLocalPaths.add(normalizePathForLookup(item.local.mediaPath));
-    if (item.local?.txtPath) allowedLocalPaths.add(normalizePathForLookup(item.local.txtPath));
-  }
 
   items.sort((a, b) => {
     const left = `${b.date || ""}|${b.id}`;
@@ -589,7 +584,7 @@ function buildIndex() {
     database: { ...dbStatus },
   };
 
-  const index = { items, stats, builtAt: new Date().toISOString(), allowedLocalPaths };
+  const index = { items, stats, builtAt: new Date().toISOString() };
   persistIndexToDb(index);
   index.stats.database = { ...dbStatus };
   return index;
@@ -605,6 +600,14 @@ function json(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function mediaUrlFor(itemId, kind = "media") {
+  return `/media?id=${encodeURIComponent(itemId)}&kind=${encodeURIComponent(kind)}`;
+}
+
+function fileNameOnly(filePath) {
+  return path.basename(String(filePath || ""));
+}
+
 function contentDispositionInline(filePath) {
   const fileName = path.basename(filePath);
   const safeAsciiName = fileName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
@@ -615,15 +618,6 @@ function contentDispositionInline(filePath) {
 function sendFile(response, filePath, contentType, extraHeaders = {}) {
   response.writeHead(200, { "Content-Type": contentType, ...extraHeaders });
   fs.createReadStream(filePath).pipe(response);
-}
-
-function safePathFromQuery(inputPath, index) {
-  if (!inputPath) return null;
-  const resolved = path.resolve(inputPath);
-  const ext = path.extname(resolved).toLowerCase();
-  if (ext !== ".mp4" && ext !== ".txt") return null;
-  if (!index?.allowedLocalPaths?.has(normalizePathForLookup(resolved))) return null;
-  return resolved;
 }
 
 function serializeListItem(item) {
@@ -644,15 +638,87 @@ function serializeListItem(item) {
     likeCount: item.likeCount,
     viewCount: item.viewCount,
     posterUsername: item.posterUsername || null,
-    ownerUsername: item.ownerUsername,
-    ownerUsernames: item.ownerUsernames || [],
     cameoOwnerUsernames: item.cameoOwnerUsernames || [],
     isLiked: item.isLiked,
-    previewUrl: item.previewUrl,
-    thumbUrl: item.thumbUrl,
-    localMediaPath: item.local?.mediaPath || null,
+    previewUrl: DEBUG_MODE ? item.previewUrl : null,
+    downloadUrl: DEBUG_MODE ? item.downloadUrl : null,
+    thumbUrl: DEBUG_MODE ? item.thumbUrl : null,
+    mediaUrl: item.hasLocalMedia ? mediaUrlFor(item.id, "media") : null,
     hasLocalMedia: item.hasLocalMedia,
     hasLocalText: item.hasLocalText,
+  };
+}
+
+function serializeStats(stats) {
+  return {
+    totalItems: stats.totalItems,
+    manifestItems: stats.manifestItems,
+    localOnlyItems: stats.localOnlyItems,
+    withLocalMedia: stats.withLocalMedia,
+    withLocalText: stats.withLocalText,
+    sources: stats.sources,
+    manifests: (stats.manifests || []).map((manifest) => ({
+      file: fileNameOnly(manifest.file),
+      exportedAt: manifest.exportedAt || null,
+      total: manifest.total ?? null,
+    })),
+    manifestErrors: (stats.manifestErrors || []).map((entry) => ({
+      file: fileNameOnly(entry.file),
+      error: entry.error,
+    })),
+    database: {
+      enabled: Boolean(stats.database?.enabled),
+      savedItems: Number(stats.database?.savedItems || 0),
+      error: stats.database?.error || null,
+      configured: ENABLE_SQLITE_CACHE,
+    },
+    debugEnabled: DEBUG_MODE,
+  };
+}
+
+function serializeDetailItem(item) {
+  return {
+    id: item.id,
+    kind: item.kind,
+    source: item.source,
+    date: item.date,
+    prompt: item.prompt,
+    genId: item.genId,
+    generationId: item.generationId,
+    taskId: item.taskId,
+    postId: item.postId,
+    width: item.width,
+    height: item.height,
+    ratio: item.ratio,
+    duration: item.duration,
+    likeCount: item.likeCount,
+    viewCount: item.viewCount,
+    posterUsername: item.posterUsername || null,
+    cameoOwnerUsernames: item.cameoOwnerUsernames || [],
+    hasLocalMedia: item.hasLocalMedia,
+    hasLocalText: item.hasLocalText,
+    mediaUrl: item.hasLocalMedia ? mediaUrlFor(item.id, "media") : null,
+    previewUrl: DEBUG_MODE ? item.previewUrl : null,
+    downloadUrl: DEBUG_MODE ? item.downloadUrl : null,
+    thumbUrl: DEBUG_MODE ? item.thumbUrl : null,
+    permalink: DEBUG_MODE ? item.raw?._raw?.post?.permalink || null : null,
+    local: item.local
+      ? {
+          txtEncoding: item.local.txtEncoding || null,
+          txtRaw: item.local.txtRaw || null,
+          txtPrompt: item.local.txtPrompt || null,
+          parsed: item.local.parsed || null,
+          txtUrl: item.hasLocalText ? mediaUrlFor(item.id, "txt") : null,
+        }
+      : null,
+    debug: DEBUG_MODE
+      ? {
+          manifestFile: item.manifestFile || null,
+          localMediaPath: item.local?.mediaPath || null,
+          localTxtPath: item.local?.txtPath || null,
+          raw: item.raw || null,
+        }
+      : null,
   };
 }
 
@@ -744,6 +810,16 @@ function itemDetails(index, url) {
   return index.items.find((item) => item.id === decodeURIComponent(id)) || null;
 }
 
+function localFileForRequest(index, url) {
+  const id = decodeURIComponent(url.searchParams.get("id") || "");
+  const kind = url.searchParams.get("kind") || "media";
+  const item = index.items.find((entry) => entry.id === id);
+  if (!item) return null;
+  if (kind === "media") return item.local?.mediaPath || null;
+  if (kind === "txt") return item.local?.txtPath || null;
+  return null;
+}
+
 function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
@@ -753,7 +829,7 @@ function handleRequest(request, response) {
       const listing = listItems(index, url);
       return json(response, 200, {
         builtAt: index.builtAt,
-        stats: index.stats,
+        stats: serializeStats(index.stats),
         items: listing.items,
         pagination: listing.pagination,
       });
@@ -767,7 +843,7 @@ function handleRequest(request, response) {
       const index = ensureIndex();
       const item = itemDetails(index, url);
       if (!item) return json(response, 404, { error: "Item not found" });
-      return json(response, 200, item);
+      return json(response, 200, serializeDetailItem(item));
     } catch (error) {
       return json(response, 500, { error: "Failed to load item details", details: error.message });
     }
@@ -777,7 +853,7 @@ function handleRequest(request, response) {
     try {
       const rebuiltIndex = buildIndex();
       cachedIndex = rebuiltIndex;
-      return json(response, 200, { ok: true, builtAt: cachedIndex.builtAt, stats: cachedIndex.stats });
+      return json(response, 200, { ok: true, builtAt: cachedIndex.builtAt, stats: serializeStats(cachedIndex.stats) });
     } catch (error) {
       return json(response, 500, { error: "Failed to rebuild index", details: error.message });
     }
@@ -786,7 +862,7 @@ function handleRequest(request, response) {
   if (url.pathname === "/media") {
     try {
       const index = ensureIndex();
-      const filePath = safePathFromQuery(url.searchParams.get("path"), index);
+      const filePath = localFileForRequest(index, url);
       if (!filePath || !fs.existsSync(filePath)) return json(response, 404, { error: "Media not found" });
       const ext = path.extname(filePath).toLowerCase();
       const contentType =
@@ -831,10 +907,11 @@ function startServer(port, attempt = 0) {
     throw error;
   });
 
-  server.listen(port, () => {
+  server.listen(port, BIND_HOST, () => {
     const address = server.address();
     const actualPort = typeof address === "object" && address ? address.port : port;
-    console.log(`Sora2 Vault Viewer running at http://localhost:${actualPort}`);
+    const displayHost = BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST;
+    console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
     try {
       const index = ensureIndex();
       console.log(`Indexed ${index.stats.totalItems} items`);
@@ -846,6 +923,14 @@ function startServer(port, attempt = 0) {
     }
     console.log("Press Ctrl+C in this terminal to stop the server.");
   });
+
+  return server;
 }
 
-startServer(DEFAULT_PORT);
+if (require.main === module) {
+  startServer(DEFAULT_PORT);
+}
+
+module.exports = {
+  startServer,
+};

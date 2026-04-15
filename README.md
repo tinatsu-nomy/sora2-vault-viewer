@@ -14,7 +14,7 @@ This project assumes the data structure produced by [SoraVault 2.0](https://gith
 - Searches by prompt, `genId`, `postId`, `taskId`, and TXT content with auto-apply filtering
 - Supports pagination, page size selection, source filtering, and sorting by date, prompt, duration, views, likes, and source order
 - Supports keyboard browsing across gallery cards with `Tab`, `Enter`, `Space`, and arrow keys
-- Shows manifest-derived metadata such as `posted by`, likes, views, loaded manifest names, TXT content, and raw manifest JSON
+- Shows manifest-derived metadata such as `posted by`, likes, views, loaded manifest names, and TXT content
 
 ## Quick Start
 
@@ -48,9 +48,12 @@ The app starts at `http://localhost:3210` by default and automatically moves to 
 
 Optional environment variables:
 - `PORT`: starting port for the local server
+- `SORA_BIND_HOST`: bind host for the HTTP server. Defaults to `127.0.0.1`
 - `SORA_VIEWER_ROOT`: override the repository root
 - `SORA_DATA_DIR`: override the data directory location
 - `SORA_SQLITE_PATH`: override the SQLite cache file path
+- `SORA_ENABLE_SQLITE_CACHE=1`: opt in to SQLite cache writes
+- `SORA_VIEWER_DEBUG=1`: expose debug-only fields such as raw manifest JSON, local file paths, and external media links
 
 ## Data Layout
 
@@ -84,12 +87,13 @@ If these conditions are not met, the files can still appear as `local-only` item
 ## Behavior / Limits
 
 - `Local only` is enabled by default so the initial feed focuses on files that exist locally
+- The server binds to loopback (`127.0.0.1`) by default, so it is local-only unless you explicitly override `SORA_BIND_HOST`
 - `Rescan` re-detects `soravault_manifest_*.json` files each time, so newly added manifests can be picked up without restarting the server
 - Malformed or partially written manifest JSON files are skipped and recorded instead of terminating the viewer
 - Index, detail, rebuild, and media failures are surfaced as recoverable UI or API errors instead of silently breaking the app
 - The `/media` endpoint serves only indexed local `mp4` and `txt` files
-- External `preview` / `download` / `thumb` URLs are shown as links only and are not fetched automatically by the viewer
-- SQLite cache support is optional; the viewer continues working even if SQLite is unavailable
+- Raw manifest JSON, absolute local file paths, and external media links are hidden unless `SORA_VIEWER_DEBUG=1`
+- SQLite cache support is optional and disabled by default; the viewer continues working even if SQLite is unavailable
 - Sora 1 data is not supported because no Sora 1 export data was available for development or validation
 
 ## Troubleshooting
@@ -97,6 +101,7 @@ If these conditions are not met, the files can still appear as `local-only` item
 - If new manifests or files do not appear, click `Rescan` and then check `Loaded manifests`
 - If a manifest is malformed, the viewer skips it and continues indexing the remaining files
 - If the UI shows an index, detail, or rebuild error, fix the underlying file issue and try `Rescan` again
+- Run `npm run check` for syntax validation and `npm test` for the smoke test fixture
 - Local media, manifests, caches, and backup logs are intentionally excluded by `.gitignore`
 - This repository is provided as-is, without warranty or guarantee of compatibility, correctness, completeness, or fitness for a particular purpose
 - Behavior is intended for SoraVault 2.0 export layouts and is not guaranteed for other export formats or future versions

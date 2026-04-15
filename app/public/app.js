@@ -241,7 +241,6 @@ function renderStats() {
     </article>
     <article class="summary-card db-card">
       <strong>SQLite Cache</strong>
-      <div class="subtle">${escapeHtml(stats.database?.path || "")}</div>
       <div class="subtle">
         ${
           stats.database?.enabled
@@ -258,7 +257,7 @@ function renderStats() {
 }
 
 function createMediaMarkup(item) {
-  const localMediaUrl = item.localMediaPath ? `/media?path=${encodeURIComponent(item.localMediaPath)}` : null;
+  const localMediaUrl = item.mediaUrl || null;
   if (localMediaUrl) {
     return `
       <div class="gallery-media">
@@ -457,7 +456,7 @@ function renderList() {
   els.list.innerHTML = state.items
     .map((item) => {
       const title = displayTitle(item);
-      const localMediaUrl = item.localMediaPath ? `/media?path=${encodeURIComponent(item.localMediaPath)}` : null;
+      const localMediaUrl = item.mediaUrl || null;
       const posterUsername = formatPosterUsername(item);
       const cameoUsernames = formatCameoUsernames(item);
       return `
@@ -590,7 +589,7 @@ async function renderDetail() {
   if (requestToken !== detailRequestToken || selectedId !== state.selectedId) {
     return;
   }
-  const localMediaUrl = item.local?.mediaPath ? `/media?path=${encodeURIComponent(item.local.mediaPath)}` : null;
+  const localMediaUrl = item.mediaUrl || null;
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
   const summaryChips = [
@@ -605,8 +604,8 @@ async function renderDetail() {
     item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">previewUrl</a>` : "",
     item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">downloadUrl</a>` : "",
     item.thumbUrl ? `<a href="${escapeHtml(item.thumbUrl)}" target="_blank" rel="noreferrer">thumbUrl</a>` : "",
-    item.raw?._raw?.post?.permalink
-      ? `<a href="${escapeHtml(item.raw._raw.post.permalink)}" target="_blank" rel="noreferrer">permalink</a>`
+    item.permalink
+      ? `<a href="${escapeHtml(item.permalink)}" target="_blank" rel="noreferrer">permalink</a>`
       : "",
   ]
     .filter(Boolean)
@@ -616,7 +615,7 @@ async function renderDetail() {
     ${
       localMediaUrl
         ? `<div class="detail-player"><video controls autoplay loop preload="metadata" playsinline src="${escapeHtml(localMediaUrl)}"></video></div>`
-        : `<div class="detail-card"><div class="subtle">No local MP4 was found. Use the external links below if needed.</div></div>`
+        : `<div class="detail-card"><div class="subtle">No local MP4 was found. Use external links below if available.</div></div>`
     }
 
     <div class="detail-hero">
@@ -649,17 +648,16 @@ async function renderDetail() {
       <div class="prompt-box">${escapeHtml(item.prompt || item.local?.txtPrompt || "(empty)")}</div>
     </div>
 
-    <div class="detail-card">
-      <h3>Links</h3>
-      <div class="links">${links || '<span class="subtle">No external links</span>'}</div>
-    </div>
-
-    <div class="detail-card">
-      <h3>Local Files</h3>
-      <div class="text-box">${escapeHtml(
-        [item.local?.mediaPath, item.local?.txtPath].filter(Boolean).join("\n") || "No local files detected",
-      )}</div>
-    </div>
+    ${
+      links
+        ? `
+          <div class="detail-card">
+            <h3>Links</h3>
+            <div class="links">${links}</div>
+          </div>
+        `
+        : ""
+    }
 
     ${
       item.local?.txtRaw
@@ -673,10 +671,23 @@ async function renderDetail() {
         : ""
     }
 
-    <div class="detail-card">
-      <h3>Manifest JSON</h3>
-      <pre class="json-box">${escapeHtml(formatJson(item.raw || {}))}</pre>
-    </div>
+    ${
+      item.debug
+        ? `
+          <div class="detail-card">
+            <h3>Local Files</h3>
+            <div class="text-box">${escapeHtml(
+              [item.debug.localMediaPath, item.debug.localTxtPath].filter(Boolean).join("\n") || "No local files detected",
+            )}</div>
+          </div>
+
+          <div class="detail-card">
+            <h3>Manifest JSON</h3>
+            <pre class="json-box">${escapeHtml(formatJson(item.debug.raw || {}))}</pre>
+          </div>
+        `
+        : ""
+    }
   `;
 
   const detailVideo = els.detail.querySelector(".detail-player video");
