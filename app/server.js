@@ -364,6 +364,49 @@ function parseManifestItem(item, manifestPath, exportedAt) {
   };
 }
 
+function shouldSkipManifestSearchKey(key) {
+  return /url|uri|path|sig|cursor|share_ref|download|preview|thumb/i.test(String(key || ""));
+}
+
+function appendManifestSearchValues(value, values, seen) {
+  if (value == null) return;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    if (/^https?:\/\//i.test(trimmed)) return;
+    values.push(trimmed);
+    return;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    values.push(String(value));
+    return;
+  }
+
+  if (typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      appendManifestSearchValues(item, values, seen);
+    }
+    return;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (shouldSkipManifestSearchKey(key)) continue;
+    appendManifestSearchValues(nestedValue, values, seen);
+  }
+}
+
+function manifestSearchText(entry) {
+  if (!entry?.raw?._raw) return "";
+  const values = [];
+  appendManifestSearchValues(entry.raw._raw, values, new Set());
+  return values.join("\n");
+}
+
 function addLookup(map, key, entryId) {
   if (!key) return;
   const normalized = slugForText(key);
@@ -552,6 +595,11 @@ function buildIndex() {
       entry.generationId,
       entry.taskId,
       entry.postId,
+      entry.posterUsername,
+      ...(entry.ownerUsernames || []),
+      ...(entry.cameoOwnerUsernames || []),
+      entry.manifestFile ? path.basename(entry.manifestFile) : null,
+      manifestSearchText(entry),
       entry.local?.txtRaw,
     ]
       .filter(Boolean)
