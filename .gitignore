@@ -1,0 +1,17 @@
+node_modules/
+
+# Local data and generated cache
+sora2_data/
+app/data/
+
+# Local logs and scratch files
+*.log
+*.sqlite
+*.sqlite-journal
+_backups/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

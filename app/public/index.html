@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sora2 Vault Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <p class="eyebrow">Local Sora2 Archive</p>
+          <h1>Sora2 Vault Viewer</h1>
+          <p class="subtle">Browse local videos inline while referencing manifest and text metadata</p>
+        </div>
+
+        <nav class="topnav" aria-label="source filters">
+          <button type="button" class="nav-chip active" data-source="all">All</button>
+          <button type="button" class="nav-chip" data-source="v2_profile">Profile</button>
+          <button type="button" class="nav-chip" data-source="v2_liked">Liked</button>
+          <button type="button" class="nav-chip" data-source="v2_drafts">Drafts</button>
+        </nav>
+      </header>
+
+      <section class="toolbar panel">
+        <label class="field search-field">
+          <span>Search</span>
+          <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
+        </label>
+
+        <label class="field compact">
+          <span>Source</span>
+          <select id="source">
+            <option value="all">All</option>
+          </select>
+        </label>
+
+        <label class="field compact">
+          <span>Sort</span>
+          <select id="sort">
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="prompt-asc">Prompt A→Z</option>
+            <option value="prompt-desc">Prompt Z→A</option>
+            <option value="duration-desc">Longest first</option>
+            <option value="duration-asc">Shortest first</option>
+            <option value="source-asc">Source order</option>
+          </select>
+        </label>
+
+        <label class="toggle">
+          <input id="localOnly" type="checkbox" />
+          <span>Local only</span>
+        </label>
+
+        <label class="toggle">
+          <input id="withMedia" type="checkbox" />
+          <span>With video</span>
+        </label>
+
+        <label class="toggle">
+          <input id="withText" type="checkbox" />
+          <span>With text</span>
+        </label>
+
+        <div class="toolbar-actions">
+          <button id="searchButton" type="button">Refresh</button>
+          <button id="rebuildButton" type="button" class="secondary">Rescan</button>
+        </div>
+      </section>
+
+      <section id="stats" class="summary-strip"></section>
+
+      <main class="content">
+        <section class="gallery-section">
+          <div class="section-head">
+            <div>
+              <h2>Local Feed</h2>
+              <p class="subtle">Local `mp4` files play directly inside the grid cards</p>
+            </div>
+            <p id="resultMeta" class="subtle"></p>
+          </div>
+          <div id="list" class="gallery-grid"></div>
+        </section>
+
+        <aside class="detail-section panel">
+          <div class="section-head">
+            <div>
+              <h2>Details</h2>
+              <p class="subtle">Details for the selected item</p>
+            </div>
+          </div>
+          <div id="detail" class="detail empty">Select a card to see more details here.</div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
