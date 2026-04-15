@@ -33,13 +33,6 @@
         </label>
 
         <label class="field compact">
-          <span>Source</span>
-          <select id="source">
-            <option value="all">All</option>
-          </select>
-        </label>
-
-        <label class="field compact">
           <span>Sort</span>
           <select id="sort">
             <option value="date-desc">Newest first</option>
@@ -87,13 +80,10 @@
         </label>
 
         <div class="toolbar-actions">
-          <button id="searchButton" type="button">Refresh</button>
           <button id="rebuildButton" type="button" class="secondary">Rescan</button>
           <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
         </div>
       </section>
-
-      <section id="stats" class="summary-strip"></section>
 
       <main class="content">
         <section class="gallery-section">
@@ -118,6 +108,8 @@
           <div id="detail" class="detail empty">Select a card to see more details here.</div>
         </aside>
       </main>
+
+      <section id="stats" class="summary-strip"></section>
     </div>
 
     <div id="rebuildModal" class="modal-backdrop hidden" aria-hidden="true">

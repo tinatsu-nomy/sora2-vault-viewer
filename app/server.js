@@ -605,8 +605,15 @@ function json(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
-function sendFile(response, filePath, contentType) {
-  response.writeHead(200, { "Content-Type": contentType });
+function contentDispositionInline(filePath) {
+  const fileName = path.basename(filePath);
+  const safeAsciiName = fileName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
+  const encodedName = encodeURIComponent(fileName);
+  return `inline; filename="${safeAsciiName}"; filename*=UTF-8''${encodedName}`;
+}
+
+function sendFile(response, filePath, contentType, extraHeaders = {}) {
+  response.writeHead(200, { "Content-Type": contentType, ...extraHeaders });
   fs.createReadStream(filePath).pipe(response);
 }
 
@@ -777,13 +784,19 @@ function handleRequest(request, response) {
   }
 
   if (url.pathname === "/media") {
-    const index = ensureIndex();
-    const filePath = safePathFromQuery(url.searchParams.get("path"), index);
-    if (!filePath || !fs.existsSync(filePath)) return json(response, 404, { error: "Media not found" });
-    const ext = path.extname(filePath).toLowerCase();
-    const contentType =
-      ext === ".mp4" ? "video/mp4" : ext === ".txt" ? "text/plain; charset=utf-8" : "application/octet-stream";
-    return sendFile(response, filePath, contentType);
+    try {
+      const index = ensureIndex();
+      const filePath = safePathFromQuery(url.searchParams.get("path"), index);
+      if (!filePath || !fs.existsSync(filePath)) return json(response, 404, { error: "Media not found" });
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType =
+        ext === ".mp4" ? "video/mp4" : ext === ".txt" ? "text/plain; charset=utf-8" : "application/octet-stream";
+      return sendFile(response, filePath, contentType, {
+        "Content-Disposition": contentDispositionInline(filePath),
+      });
+    } catch (error) {
+      return json(response, 500, { error: "Failed to serve media", details: error.message });
+    }
   }
 
   const assetPath = url.pathname === "/"

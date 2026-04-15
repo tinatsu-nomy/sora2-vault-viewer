@@ -129,7 +129,7 @@ h2 {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(140px, 0.8fr)) auto auto auto auto;
+  grid-template-columns: minmax(280px, 2.2fr) repeat(2, minmax(160px, 0.9fr)) repeat(4, auto) minmax(140px, auto);
   gap: 12px;
   align-items: end;
   padding: 16px;
@@ -211,6 +211,7 @@ button:disabled {
   display: flex;
   gap: 10px;
   align-items: center;
+  justify-content: flex-end;
   padding-bottom: 1px;
   flex-wrap: wrap;
 }
@@ -263,22 +264,22 @@ button:disabled {
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .summary-card {
   border: 1px solid var(--line);
   background: rgba(16, 16, 20, 0.78);
-  border-radius: 22px;
-  padding: 14px 16px;
+  border-radius: 18px;
+  padding: 10px 12px;
 }
 
 .summary-card strong {
   display: block;
-  font-size: 26px;
-  margin-bottom: 6px;
+  font-size: 20px;
+  margin-bottom: 3px;
 }
 
 .summary-card small,
@@ -292,8 +293,8 @@ button:disabled {
 
 .content {
   display: grid;
-  grid-template-columns: 460px minmax(0, 1fr);
-  grid-template-areas: "detail gallery";
+  grid-template-columns: minmax(0, 1fr) 420px;
+  grid-template-areas: "gallery detail";
   gap: 18px;
   margin-top: 18px;
 }
@@ -301,7 +302,8 @@ button:disabled {
 .gallery-section {
   min-width: 0;
   grid-area: gallery;
-  padding: 16px;
+  padding: 18px;
+  position: relative;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 24px;
   background:
@@ -327,6 +329,28 @@ button:disabled {
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.gallery-section.is-loading::after,
+.detail-section.is-loading::after {
+  content: "Loading...";
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 3;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(7, 8, 12, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #eef2ff;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.gallery-section.is-loading .gallery-grid,
+.detail-section.is-loading .detail {
+  opacity: 0.72;
+  transition: opacity 120ms ease;
 }
 
 .section-head {
@@ -397,6 +421,11 @@ button:disabled {
 
 .gallery-card.active {
   outline: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.gallery-card:focus-visible {
+  outline: 2px solid rgba(143, 169, 255, 0.88);
+  outline-offset: 2px;
 }
 
 .gallery-media {

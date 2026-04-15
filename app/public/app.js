@@ -24,14 +24,12 @@ const state = {
 
 const els = {
   query: document.querySelector("#query"),
-  source: document.querySelector("#source"),
   sort: document.querySelector("#sort"),
   pageSize: document.querySelector("#pageSize"),
   localOnly: document.querySelector("#localOnly"),
   withText: document.querySelector("#withText"),
   withMedia: document.querySelector("#withMedia"),
   showCameo: document.querySelector("#showCameo"),
-  searchButton: document.querySelector("#searchButton"),
   clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
@@ -39,6 +37,8 @@ const els = {
   rebuildModalTitle: document.querySelector("#rebuildModalTitle"),
   rebuildModalMessage: document.querySelector("#rebuildModalMessage"),
   rebuildModalOk: document.querySelector("#rebuildModalOk"),
+  gallerySection: document.querySelector(".gallery-section"),
+  detailSection: document.querySelector(".detail-section"),
   list: document.querySelector("#list"),
   detail: document.querySelector("#detail"),
   stats: document.querySelector("#stats"),
@@ -50,6 +50,7 @@ const els = {
 let mediaObserver = null;
 let detailRequestToken = 0;
 let indexRequestToken = 0;
+let searchDebounceTimer = null;
 
 const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
@@ -99,6 +100,18 @@ function syncNavChips() {
   }
 }
 
+function clearSearchDebounce() {
+  if (!searchDebounceTimer) return;
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = null;
+}
+
+function setSectionLoading(section, isLoading) {
+  if (!section) return;
+  section.classList.toggle("is-loading", isLoading);
+  section.setAttribute("aria-busy", isLoading ? "true" : "false");
+}
+
 function buildQueryString() {
   const params = new URLSearchParams();
   if (state.filters.query) params.set("query", state.filters.query);
@@ -112,67 +125,82 @@ function buildQueryString() {
   return params.toString();
 }
 
-async function fetchIndex() {
-  const requestToken = ++indexRequestToken;
-  const response = await fetch(`/api/index?${buildQueryString()}`);
-  const payload = await response.json();
-  if (requestToken !== indexRequestToken) {
-    return;
-  }
-
-  if (!response.ok) {
-    const message = payload?.details ? `${payload.error || "Failed to load index"}: ${payload.details}` : payload?.error || "Failed to load index";
-    state.items = [];
-    state.stats = null;
-    state.pagination = {
-      total: 0,
-      limit: state.pagination.limit,
-      offset: 0,
-      page: 0,
-      totalPages: 0,
-      hasPrevious: false,
-      hasNext: false,
-    };
-    state.selectedId = null;
-    els.stats.innerHTML = `
-      <article class="summary-card db-card">
-        <strong>Index Error</strong>
-        <div class="subtle">${escapeHtml(message)}</div>
-      </article>
-    `;
-    els.resultMeta.textContent = "Index unavailable";
-    els.list.innerHTML = `
-      <article class="empty-state">
-        <strong>Unable to load the viewer index</strong>
-        <div class="subtle">${escapeHtml(message)}</div>
-      </article>
-    `;
-    els.pagination.innerHTML = "";
-    els.detail.innerHTML = "Fix the manifest/index issue and try Refresh or Rescan again.";
-    return;
-  }
-
-  state.items = payload.items;
-  state.stats = payload.stats;
-  state.pagination = payload.pagination || {
-    total: payload.items.length,
+function renderIndexError(message) {
+  state.items = [];
+  state.stats = null;
+  state.pagination = {
+    total: 0,
     limit: state.pagination.limit,
     offset: 0,
-    page: 1,
-    totalPages: 1,
+    page: 0,
+    totalPages: 0,
     hasPrevious: false,
     hasNext: false,
   };
-  populateSourceFilter(payload.stats.sources);
-  renderStats();
-  renderList();
-  renderPagination();
-  if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
-  if (state.selectedId && !state.items.find((item) => item.id === state.selectedId)) {
-    state.selectedId = state.items[0]?.id || null;
+  state.selectedId = null;
+  els.stats.innerHTML = `
+    <article class="summary-card db-card">
+      <strong>Index Error</strong>
+      <div class="subtle">${escapeHtml(message)}</div>
+    </article>
+  `;
+  els.resultMeta.textContent = "Index unavailable";
+  els.list.innerHTML = `
+    <article class="empty-state">
+      <strong>Unable to load the viewer index</strong>
+      <div class="subtle">${escapeHtml(message)}</div>
+    </article>
+  `;
+  els.pagination.innerHTML = "";
+  els.detail.innerHTML = "Fix the manifest/index issue and try Rescan again.";
+}
+
+async function fetchIndex() {
+  const requestToken = ++indexRequestToken;
+  setSectionLoading(els.gallerySection, true);
+  try {
+    const response = await fetch(`/api/index?${buildQueryString()}`);
+    const payload = await response.json();
+    if (requestToken !== indexRequestToken) {
+      return;
+    }
+
+    if (!response.ok) {
+      const message = payload?.details ? `${payload.error || "Failed to load index"}: ${payload.details}` : payload?.error || "Failed to load index";
+      renderIndexError(message);
+      return;
+    }
+
+    state.items = payload.items;
+    state.stats = payload.stats;
+    state.pagination = payload.pagination || {
+      total: payload.items.length,
+      limit: state.pagination.limit,
+      offset: 0,
+      page: 1,
+      totalPages: 1,
+      hasPrevious: false,
+      hasNext: false,
+    };
+    renderStats();
+    renderList();
+    renderPagination();
+    if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
+    if (state.selectedId && !state.items.find((item) => item.id === state.selectedId)) {
+      state.selectedId = state.items[0]?.id || null;
+    }
+    updateActiveCard();
+    await renderDetail();
+  } catch (error) {
+    if (requestToken !== indexRequestToken) {
+      return;
+    }
+    renderIndexError(error?.message || "Failed to load index");
+  } finally {
+    if (requestToken === indexRequestToken) {
+      setSectionLoading(els.gallerySection, false);
+    }
   }
-  updateActiveCard();
-  await renderDetail();
 }
 
 async function fetchDetail(id) {
@@ -183,25 +211,6 @@ async function fetchDetail(id) {
     throw new Error(message);
   }
   return payload;
-}
-
-function populateSourceFilter(sources) {
-  const preferredOrder = ["v2_profile", "v2_liked", "v2_drafts"];
-  const orderedSources = [...sources].sort((left, right) => {
-    const leftIndex = preferredOrder.indexOf(left);
-    const rightIndex = preferredOrder.indexOf(right);
-    if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-    if (leftIndex === -1) return 1;
-    if (rightIndex === -1) return -1;
-    return leftIndex - rightIndex;
-  });
-
-  els.source.innerHTML = `<option value="all">All</option>${orderedSources
-    .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(sourceLabel(source))}</option>`)
-    .join("")}`;
-  state.filters.sources = orderedSources.filter((source) => state.filters.sources.includes(source));
-  els.source.value = state.filters.sources.length === 1 ? state.filters.sources[0] : "all";
-  syncNavChips();
 }
 
 function renderStats() {
@@ -350,8 +359,67 @@ function setupGalleryMediaObserver() {
 
 function updateActiveCard() {
   for (const card of els.list.querySelectorAll(".gallery-card")) {
-    card.classList.toggle("active", card.dataset.id === state.selectedId);
+    const isActive = card.dataset.id === state.selectedId;
+    card.classList.toggle("active", isActive);
+    card.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
+}
+
+function galleryCards() {
+  return [...els.list.querySelectorAll(".gallery-card")];
+}
+
+function horizontalCenter(card) {
+  return card.offsetLeft + card.offsetWidth / 2;
+}
+
+function rowTops(cards) {
+  return [...new Set(cards.map((card) => card.offsetTop))].sort((left, right) => left - right);
+}
+
+function rowCards(cards, top) {
+  return cards.filter((card) => Math.abs(card.offsetTop - top) <= 4);
+}
+
+function findArrowNavigationTarget(currentCard, direction) {
+  const cards = galleryCards();
+  const currentIndex = cards.indexOf(currentCard);
+  if (currentIndex === -1) return null;
+
+  if (direction === "ArrowLeft") return cards[currentIndex - 1] || null;
+  if (direction === "ArrowRight") return cards[currentIndex + 1] || null;
+
+  const tops = rowTops(cards);
+  const currentTop = tops.find((top) => Math.abs(top - currentCard.offsetTop) <= 4);
+  const currentRowIndex = tops.indexOf(currentTop);
+  const targetRowIndex = direction === "ArrowUp" ? currentRowIndex - 1 : currentRowIndex + 1;
+  const targetTop = tops[targetRowIndex];
+  if (currentTop == null || targetTop == null) return null;
+
+  const targetCards = rowCards(cards, targetTop);
+  if (!targetCards.length) return null;
+
+  const currentCenter = horizontalCenter(currentCard);
+  return targetCards.reduce((best, candidate) => {
+    if (!best) return candidate;
+    return Math.abs(horizontalCenter(candidate) - currentCenter) < Math.abs(horizontalCenter(best) - currentCenter)
+      ? candidate
+      : best;
+  }, null);
+}
+
+async function selectGalleryItem(id) {
+  if (!id || id === state.selectedId) return;
+  state.selectedId = id;
+  updateActiveCard();
+  await renderDetail();
+}
+
+async function focusAndSelectCard(card) {
+  if (!card) return;
+  card.focus();
+  card.scrollIntoView({ block: "nearest", inline: "nearest" });
+  await selectGalleryItem(card.dataset.id);
 }
 
 function renderList() {
@@ -367,7 +435,14 @@ function renderList() {
       const posterUsername = formatPosterUsername(item);
       const cameoUsernames = formatCameoUsernames(item);
       return `
-        <article class="gallery-card ${item.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(item.id)}">
+        <article
+          class="gallery-card ${item.id === state.selectedId ? "active" : ""}"
+          data-id="${escapeHtml(item.id)}"
+          tabindex="0"
+          role="button"
+          aria-pressed="${item.id === state.selectedId ? "true" : "false"}"
+          aria-label="Open details for ${escapeHtml(title)}"
+        >
           ${createMediaMarkup(item)}
           <div class="gallery-overlay">
             <div class="gallery-top">
@@ -401,10 +476,22 @@ function renderList() {
     .join("");
 
   for (const card of els.list.querySelectorAll(".gallery-card")) {
-    card.addEventListener("click", async () => {
-      state.selectedId = card.dataset.id;
-      updateActiveCard();
-      await renderDetail();
+    card.addEventListener("click", async (event) => {
+      if (event.target.closest("a")) return;
+      await selectGalleryItem(card.dataset.id);
+    });
+    card.addEventListener("keydown", async (event) => {
+      if (event.target !== card) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        await selectGalleryItem(card.dataset.id);
+        return;
+      }
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      const targetCard = findArrowNavigationTarget(card, event.key);
+      if (!targetCard) return;
+      event.preventDefault();
+      await focusAndSelectCard(targetCard);
     });
   }
 
@@ -456,6 +543,7 @@ async function renderDetail() {
 
   const selectedId = state.selectedId;
   const requestToken = ++detailRequestToken;
+  setSectionLoading(els.detailSection, true);
   let item;
   try {
     item = await fetchDetail(selectedId);
@@ -470,6 +558,10 @@ async function renderDetail() {
       </article>
     `;
     return;
+  } finally {
+    if (requestToken === detailRequestToken && selectedId === state.selectedId) {
+      setSectionLoading(els.detailSection, false);
+    }
   }
   if (requestToken !== detailRequestToken || selectedId !== state.selectedId) {
     return;
@@ -591,7 +683,6 @@ function applySourceFilter(source) {
     );
   }
 
-  els.source.value = state.filters.sources.length === 1 ? state.filters.sources[0] : "all";
   syncNavChips();
   resetPagination();
   refresh();
@@ -626,27 +717,27 @@ function hideRebuildModal() {
   els.rebuildModal.setAttribute("aria-hidden", "true");
 }
 
-els.searchButton.addEventListener("click", async () => {
-  resetPagination();
-  await refresh();
-});
 els.clearQueryButton.addEventListener("click", async () => {
+  clearSearchDebounce();
   els.query.value = "";
   resetPagination();
   await refresh();
   els.query.focus();
 });
+els.query.addEventListener("input", () => {
+  clearSearchDebounce();
+  searchDebounceTimer = setTimeout(async () => {
+    searchDebounceTimer = null;
+    resetPagination();
+    await refresh();
+  }, 220);
+});
 els.query.addEventListener("keydown", async (event) => {
   if (event.key === "Enter") {
+    clearSearchDebounce();
     resetPagination();
     await refresh();
   }
-});
-els.source.addEventListener("change", async () => {
-  state.filters.sources = els.source.value === "all" ? [...SOURCE_ORDER] : [els.source.value];
-  syncNavChips();
-  resetPagination();
-  await refresh();
 });
 els.sort.addEventListener("change", async () => {
   resetPagination();
