@@ -34,6 +34,10 @@ const els = {
   searchButton: document.querySelector("#searchButton"),
   clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
+  rebuildStatus: document.querySelector("#rebuildStatus"),
+  rebuildModal: document.querySelector("#rebuildModal"),
+  rebuildModalMessage: document.querySelector("#rebuildModalMessage"),
+  rebuildModalOk: document.querySelector("#rebuildModalOk"),
   list: document.querySelector("#list"),
   detail: document.querySelector("#detail"),
   stats: document.querySelector("#stats"),
@@ -530,6 +534,25 @@ async function refresh() {
   await fetchIndex();
 }
 
+function setRebuildState(isBusy, message = "") {
+  els.rebuildButton.disabled = isBusy;
+  els.rebuildButton.textContent = isBusy ? "Rescanning..." : "Rescan";
+  els.rebuildStatus.textContent = message;
+  els.rebuildStatus.classList.toggle("busy", isBusy);
+}
+
+function showRebuildModal(message) {
+  els.rebuildModalMessage.textContent = message;
+  els.rebuildModal.classList.remove("hidden");
+  els.rebuildModal.setAttribute("aria-hidden", "false");
+  els.rebuildModalOk.focus();
+}
+
+function hideRebuildModal() {
+  els.rebuildModal.classList.add("hidden");
+  els.rebuildModal.setAttribute("aria-hidden", "true");
+}
+
 els.searchButton.addEventListener("click", async () => {
   resetPagination();
   await refresh();
@@ -575,12 +598,32 @@ for (const checkbox of [els.localOnly, els.withText, els.withMedia, els.showCame
 }
 
 els.rebuildButton.addEventListener("click", async () => {
-  els.rebuildButton.disabled = true;
+  setRebuildState(true, "Scanning manifests and local files...");
   try {
     await fetch("/api/rebuild", { method: "POST" });
     await refresh();
+    setRebuildState(false, "");
+    showRebuildModal("Manifest and local file scanning has finished.");
   } finally {
-    els.rebuildButton.disabled = false;
+    if (els.rebuildButton.disabled) {
+      setRebuildState(false, "");
+    }
+  }
+});
+
+els.rebuildModalOk.addEventListener("click", () => {
+  hideRebuildModal();
+});
+
+els.rebuildModal.addEventListener("click", (event) => {
+  if (event.target === els.rebuildModal) {
+    hideRebuildModal();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.rebuildModal.classList.contains("hidden")) {
+    hideRebuildModal();
   }
 });
 

@@ -89,6 +89,7 @@
         <div class="toolbar-actions">
           <button id="searchButton" type="button">Refresh</button>
           <button id="rebuildButton" type="button" class="secondary">Rescan</button>
+          <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
         </div>
       </section>
 
@@ -117,6 +118,16 @@
           <div id="detail" class="detail empty">Select a card to see more details here.</div>
         </aside>
       </main>
+    </div>
+
+    <div id="rebuildModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rebuildModalTitle">
+        <h3 id="rebuildModalTitle">Rescan complete</h3>
+        <p id="rebuildModalMessage" class="subtle">Manifest and local file scanning has finished.</p>
+        <div class="modal-actions">
+          <button id="rebuildModalOk" type="button">OK</button>
+        </div>
+      </div>
     </div>
 
     <script src="/app.js" defer></script>

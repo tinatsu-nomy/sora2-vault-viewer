@@ -25,6 +25,8 @@ This repository does not include or reuse SoraVault source code. It only works w
 - Hides raw video IDs from the main viewer UI while preserving searchability
 - Autoplays and loops local videos in both the gallery and the detail player
 - Uses a compact `11:20` gallery card ratio with tighter overlay spacing
+- Uses a left-side emphasized `Details` panel with a highlighted summary header
+- Shows visible progress while `Rescan` is running and opens a completion dialog when scanning finishes
 - Shows loaded manifest filenames, prompt, TXT, local file paths, external links, and manifest JSON details
 - Includes optional SQLite cache support when available
 
@@ -113,6 +115,8 @@ If these conditions are not met, the files can still appear in the viewer as `lo
 - Removed raw video IDs from the visible card/detail metadata
 - Moved likes/views indicators to the top card badges and switched them to symbol display
 - Updated gallery cards to an `11:20` aspect ratio with tighter vertical spacing
+- Moved the `Details` panel to the left and increased its visual emphasis
+- Added `Rescan` progress text and an `OK`-dismiss completion dialog
 - Added manifest filename visibility in the `Loaded manifests` summary
 
 ## Notes for GitHub

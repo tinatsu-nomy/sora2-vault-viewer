@@ -202,11 +202,63 @@ button.secondary {
   color: var(--text);
 }
 
+button:disabled {
+  opacity: 0.68;
+  cursor: progress;
+}
+
 .toolbar-actions {
   display: flex;
   gap: 10px;
   align-items: center;
   padding-bottom: 1px;
+  flex-wrap: wrap;
+}
+
+.toolbar-status {
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 18px;
+}
+
+.toolbar-status.busy {
+  color: #eef2ff;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 4, 8, 0.64);
+  backdrop-filter: blur(8px);
+  z-index: 40;
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(16, 16, 20, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  padding: 20px;
+}
+
+.modal-card p {
+  margin-top: 10px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 .summary-strip {
