@@ -2,9 +2,18 @@ const state = {
   items: [],
   stats: null,
   selectedId: null,
+  pagination: {
+    total: 0,
+    limit: 24,
+    offset: 0,
+    page: 0,
+    totalPages: 0,
+    hasPrevious: false,
+    hasNext: false,
+  },
   filters: {
     query: "",
-    source: "all",
+    sources: ["v2_profile", "v2_liked", "v2_drafts"],
     sort: "date-desc",
     localOnly: false,
     withText: false,
@@ -16,17 +25,24 @@ const els = {
   query: document.querySelector("#query"),
   source: document.querySelector("#source"),
   sort: document.querySelector("#sort"),
+  pageSize: document.querySelector("#pageSize"),
   localOnly: document.querySelector("#localOnly"),
   withText: document.querySelector("#withText"),
   withMedia: document.querySelector("#withMedia"),
   searchButton: document.querySelector("#searchButton"),
+  clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   list: document.querySelector("#list"),
   detail: document.querySelector("#detail"),
   stats: document.querySelector("#stats"),
   resultMeta: document.querySelector("#resultMeta"),
+  pagination: document.querySelector("#pagination"),
   navChips: [...document.querySelectorAll(".nav-chip")],
 };
+
+let mediaObserver = null;
+
+const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
 function escapeHtml(value) {
   return String(value || "")
@@ -40,6 +56,16 @@ function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function displayTitle(item) {
+  return item.prompt || item.ownerUsernames?.[0] || item.ownerUsername || "Untitled video";
+}
+
+function formatUsernames(item) {
+  const usernames = item.ownerUsernames?.length ? item.ownerUsernames : item.ownerUsername ? [item.ownerUsername] : [];
+  if (!usernames.length) return "";
+  return usernames.map((username) => `@${username}`).join(", ");
+}
+
 function sourceLabel(source) {
   if (source === "v2_profile") return "profile";
   if (source === "v2_drafts") return "drafts";
@@ -48,20 +74,27 @@ function sourceLabel(source) {
 }
 
 function syncNavChips() {
+  const selectedSources = new Set(state.filters.sources);
+  const allSelected = SOURCE_ORDER.every((source) => selectedSources.has(source));
+
   for (const chip of els.navChips) {
-    chip.classList.toggle("active", chip.dataset.source === state.filters.source);
+    const chipSource = chip.dataset.source;
+    const isActive = chipSource === "all" ? allSelected : selectedSources.has(chipSource);
+    chip.classList.toggle("active", isActive);
+    chip.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
 }
 
 function buildQueryString() {
   const params = new URLSearchParams();
   if (state.filters.query) params.set("query", state.filters.query);
-  if (state.filters.source && state.filters.source !== "all") params.set("source", state.filters.source);
+  if (state.filters.sources.length !== SOURCE_ORDER.length) params.set("sources", state.filters.sources.join(","));
   if (state.filters.sort) params.set("sort", state.filters.sort);
   if (state.filters.localOnly) params.set("localOnly", "1");
   if (state.filters.withText) params.set("withText", "1");
   if (state.filters.withMedia) params.set("withMedia", "1");
-  params.set("limit", "180");
+  params.set("limit", String(state.pagination.limit));
+  params.set("offset", String(state.pagination.offset));
   return params.toString();
 }
 
@@ -70,13 +103,24 @@ async function fetchIndex() {
   const payload = await response.json();
   state.items = payload.items;
   state.stats = payload.stats;
+  state.pagination = payload.pagination || {
+    total: payload.items.length,
+    limit: state.pagination.limit,
+    offset: 0,
+    page: 1,
+    totalPages: 1,
+    hasPrevious: false,
+    hasNext: false,
+  };
   populateSourceFilter(payload.stats.sources);
   renderStats();
   renderList();
+  renderPagination();
   if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
   if (state.selectedId && !state.items.find((item) => item.id === state.selectedId)) {
     state.selectedId = state.items[0]?.id || null;
   }
+  updateActiveCard();
   await renderDetail();
 }
 
@@ -86,7 +130,6 @@ async function fetchDetail(id) {
 }
 
 function populateSourceFilter(sources) {
-  const previous = state.filters.source;
   const preferredOrder = ["v2_profile", "v2_liked", "v2_drafts"];
   const orderedSources = [...sources].sort((left, right) => {
     const leftIndex = preferredOrder.indexOf(left);
@@ -100,8 +143,8 @@ function populateSourceFilter(sources) {
   els.source.innerHTML = `<option value="all">All</option>${orderedSources
     .map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(sourceLabel(source))}</option>`)
     .join("")}`;
-  els.source.value = sources.includes(previous) || previous === "all" ? previous : "all";
-  state.filters.source = els.source.value;
+  state.filters.sources = orderedSources.filter((source) => state.filters.sources.includes(source));
+  els.source.value = state.filters.sources.length === 1 ? state.filters.sources[0] : "all";
   syncNavChips();
 }
 
@@ -155,12 +198,12 @@ function createMediaMarkup(item) {
     return `
       <div class="gallery-media">
         <video
-          src="${escapeHtml(localMediaUrl)}"
+          class="gallery-video"
+          data-src="${escapeHtml(localMediaUrl)}"
           muted
           loop
           playsinline
-          preload="metadata"
-          autoplay
+          preload="none"
         ></video>
       </div>
     `;
@@ -178,12 +221,94 @@ function createMediaMarkup(item) {
   `;
 }
 
+function loadGalleryVideo(video) {
+  if (!video || video.dataset.loaded === "1") return;
+  const src = video.dataset.src;
+  if (!src) return;
+  video.src = src;
+  video.dataset.loaded = "1";
+  video.load();
+}
+
+function pauseGalleryVideo(video) {
+  if (!video) return;
+  video.pause();
+}
+
+function syncGalleryPlayback() {
+  const videos = [...els.list.querySelectorAll(".gallery-video")];
+  const visibleVideos = videos.filter((video) => video.classList.contains("is-visible"));
+
+  for (const video of visibleVideos) {
+    loadGalleryVideo(video);
+    video.play().catch(() => {});
+  }
+
+  videos
+    .filter((video) => !video.classList.contains("is-visible"))
+    .forEach((video) => pauseGalleryVideo(video));
+}
+
+function setupGalleryMediaObserver() {
+  if (mediaObserver) {
+    mediaObserver.disconnect();
+    mediaObserver = null;
+  }
+
+  const videos = [...els.list.querySelectorAll(".gallery-video")];
+  if (!videos.length) return;
+
+  if (!("IntersectionObserver" in window)) {
+    videos.forEach((video) => {
+      video.classList.add("is-visible");
+      loadGalleryVideo(video);
+    });
+    syncGalleryPlayback();
+    return;
+  }
+
+  mediaObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio > 0.2) {
+          entry.target.classList.add("is-visible");
+          loadGalleryVideo(entry.target);
+        } else {
+          entry.target.classList.remove("is-visible");
+          pauseGalleryVideo(entry.target);
+        }
+      }
+      syncGalleryPlayback();
+    },
+    {
+      root: null,
+      rootMargin: "240px 0px",
+      threshold: [0, 0.2, 0.6],
+    },
+  );
+
+  for (const video of videos) {
+    mediaObserver.observe(video);
+  }
+}
+
+function updateActiveCard() {
+  for (const card of els.list.querySelectorAll(".gallery-card")) {
+    card.classList.toggle("active", card.dataset.id === state.selectedId);
+  }
+}
+
 function renderList() {
-  els.resultMeta.textContent = `${state.items.length} items`;
+  const { total, offset } = state.pagination;
+  const start = total === 0 ? 0 : offset + 1;
+  const end = offset + state.items.length;
+  els.resultMeta.textContent =
+    total === 0 ? "0 items" : `${start}-${end} of ${total} items`;
   els.list.innerHTML = state.items
     .map((item) => {
-      const title = item.prompt || item.genId || item.postId || item.taskId || "Untitled";
+      const title = displayTitle(item);
       const localMediaUrl = item.localMediaPath ? `/media?path=${encodeURIComponent(item.localMediaPath)}` : null;
+      const usernames = formatUsernames(item);
       return `
         <article class="gallery-card ${item.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(item.id)}">
           ${createMediaMarkup(item)}
@@ -200,7 +325,9 @@ function renderList() {
               <div class="meta-row">
                 ${item.date ? `<span class="meta-pill">${escapeHtml(item.date)}</span>` : ""}
                 ${item.duration ? `<span class="meta-pill">${escapeHtml(String(item.duration))}s</span>` : ""}
-                ${item.postId ? `<span class="meta-pill">${escapeHtml(item.postId)}</span>` : ""}
+                ${usernames ? `<span class="meta-pill">${escapeHtml(usernames)}</span>` : ""}
+                ${typeof item.likeCount === "number" ? `<span class="meta-pill">likes ${escapeHtml(String(item.likeCount))}</span>` : ""}
+                ${typeof item.viewCount === "number" ? `<span class="meta-pill">views ${escapeHtml(String(item.viewCount))}</span>` : ""}
               </div>
               <div class="card-links">
                 ${localMediaUrl ? `<span>plays in viewer</span>` : ""}
@@ -218,8 +345,39 @@ function renderList() {
   for (const card of els.list.querySelectorAll(".gallery-card")) {
     card.addEventListener("click", async () => {
       state.selectedId = card.dataset.id;
-      renderList();
+      updateActiveCard();
       await renderDetail();
+    });
+  }
+
+  setupGalleryMediaObserver();
+}
+
+function renderPagination() {
+  const { page, totalPages, hasPrevious, hasNext, total } = state.pagination;
+  if (!total) {
+    els.pagination.innerHTML = "";
+    return;
+  }
+
+  els.pagination.innerHTML = `
+    <div class="pagination-summary">Page ${page} of ${totalPages}</div>
+    <div class="pagination-actions">
+      <button type="button" class="secondary page-button" data-page="prev" ${hasPrevious ? "" : "disabled"}>Previous</button>
+      <button type="button" class="secondary page-button" data-page="next" ${hasNext ? "" : "disabled"}>Next</button>
+    </div>
+  `;
+
+  for (const button of els.pagination.querySelectorAll(".page-button")) {
+    button.addEventListener("click", async () => {
+      if (button.dataset.page === "prev" && state.pagination.hasPrevious) {
+        state.pagination.offset = Math.max(0, state.pagination.offset - state.pagination.limit);
+      }
+      if (button.dataset.page === "next" && state.pagination.hasNext) {
+        state.pagination.offset += state.pagination.limit;
+      }
+      await refresh();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
 }
@@ -232,6 +390,7 @@ async function renderDetail() {
 
   const item = await fetchDetail(state.selectedId);
   const localMediaUrl = item.local?.mediaPath ? `/media?path=${encodeURIComponent(item.local.mediaPath)}` : null;
+  const usernames = formatUsernames(item);
   const links = [
     item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">previewUrl</a>` : "",
     item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">downloadUrl</a>` : "",
@@ -246,18 +405,18 @@ async function renderDetail() {
   els.detail.innerHTML = `
     ${
       localMediaUrl
-        ? `<div class="detail-player"><video controls loop preload="metadata" playsinline src="${escapeHtml(localMediaUrl)}"></video></div>`
+        ? `<div class="detail-player"><video controls autoplay loop preload="metadata" playsinline src="${escapeHtml(localMediaUrl)}"></video></div>`
         : `<div class="detail-card"><div class="subtle">No local MP4 was found. Use the external links below if needed.</div></div>`
     }
 
     <div class="detail-card">
-      <h3>${escapeHtml(item.prompt || item.genId || item.postId || item.taskId || "Untitled")}</h3>
+      <h3>${escapeHtml(displayTitle(item))}</h3>
       <div class="detail-grid">
         <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceLabel(item.source))}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row"><span>genId</span><strong>${escapeHtml(item.genId || item.generationId || "")}</strong></div>
-        <div class="detail-row"><span>postId</span><strong>${escapeHtml(item.postId || "")}</strong></div>
-        <div class="detail-row"><span>taskId</span><strong>${escapeHtml(item.taskId || "")}</strong></div>
+        <div class="detail-row"><span>usernames</span><strong>${escapeHtml(usernames)}</strong></div>
+        <div class="detail-row"><span>likes</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
+        <div class="detail-row"><span>views</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
         <div class="detail-row"><span>resolution</span><strong>${escapeHtml(item.width && item.height ? `${item.width} x ${item.height}` : item.local?.parsed?.resolution || "")}</strong></div>
         <div class="detail-row"><span>ratio</span><strong>${escapeHtml(item.ratio || item.local?.parsed?.aspectRatio || "")}</strong></div>
@@ -298,22 +457,42 @@ async function renderDetail() {
       <pre class="json-box">${escapeHtml(formatJson(item.raw || {}))}</pre>
     </div>
   `;
+
+  const detailVideo = els.detail.querySelector(".detail-player video");
+  if (detailVideo) {
+    detailVideo.play().catch(() => {});
+  }
 }
 
 function syncFiltersFromForm() {
   state.filters.query = els.query.value.trim();
-  state.filters.source = els.source.value;
   state.filters.sort = els.sort.value;
+  state.pagination.limit = Number(els.pageSize.value || state.pagination.limit);
   state.filters.localOnly = els.localOnly.checked;
   state.filters.withText = els.withText.checked;
   state.filters.withMedia = els.withMedia.checked;
 }
 
 function applySourceFilter(source) {
-  state.filters.source = source;
-  els.source.value = source;
+  if (source === "all") {
+    const allSelected = SOURCE_ORDER.every((item) => state.filters.sources.includes(item));
+    state.filters.sources = allSelected ? [] : [...SOURCE_ORDER];
+  } else if (state.filters.sources.includes(source)) {
+    state.filters.sources = state.filters.sources.filter((item) => item !== source);
+  } else {
+    state.filters.sources = [...state.filters.sources, source].sort(
+      (left, right) => SOURCE_ORDER.indexOf(left) - SOURCE_ORDER.indexOf(right),
+    );
+  }
+
+  els.source.value = state.filters.sources.length === 1 ? state.filters.sources[0] : "all";
   syncNavChips();
+  resetPagination();
   refresh();
+}
+
+function resetPagination() {
+  state.pagination.offset = 0;
 }
 
 async function refresh() {
@@ -321,12 +500,36 @@ async function refresh() {
   await fetchIndex();
 }
 
-els.searchButton.addEventListener("click", refresh);
-els.query.addEventListener("keydown", async (event) => {
-  if (event.key === "Enter") await refresh();
+els.searchButton.addEventListener("click", async () => {
+  resetPagination();
+  await refresh();
 });
-els.source.addEventListener("change", refresh);
-els.sort.addEventListener("change", refresh);
+els.clearQueryButton.addEventListener("click", async () => {
+  els.query.value = "";
+  resetPagination();
+  await refresh();
+  els.query.focus();
+});
+els.query.addEventListener("keydown", async (event) => {
+  if (event.key === "Enter") {
+    resetPagination();
+    await refresh();
+  }
+});
+els.source.addEventListener("change", async () => {
+  state.filters.sources = els.source.value === "all" ? [...SOURCE_ORDER] : [els.source.value];
+  syncNavChips();
+  resetPagination();
+  await refresh();
+});
+els.sort.addEventListener("change", async () => {
+  resetPagination();
+  await refresh();
+});
+els.pageSize.addEventListener("change", async () => {
+  resetPagination();
+  await refresh();
+});
 
 for (const chip of els.navChips) {
   chip.addEventListener("click", () => {
@@ -335,7 +538,10 @@ for (const chip of els.navChips) {
 }
 
 for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
-  checkbox.addEventListener("change", refresh);
+  checkbox.addEventListener("change", async () => {
+    resetPagination();
+    await refresh();
+  });
 }
 
 els.rebuildButton.addEventListener("click", async () => {

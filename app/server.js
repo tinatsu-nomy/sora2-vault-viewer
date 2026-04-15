@@ -293,7 +293,17 @@ function parseTxtRecord(filePath, sourceDirName) {
 }
 
 function parseManifestItem(item, manifestPath, exportedAt) {
-  const attachment = item?._raw?.post?.attachments?.[0] || item?._raw || {};
+  const post = item?._raw?.post || {};
+  const attachment = post.attachments?.[0] || item?._raw || {};
+  const ownerUsernames = [
+    item?._raw?.owner_profile?.username,
+    item?._raw?.profile?.owner_profile?.username,
+    post.owner_profile?.username,
+    post.shared_by_profile?.username,
+    post.original_poster?.username,
+    ...(post.cameo_profiles || []).map((profile) => profile?.owner_profile?.username),
+  ].filter(Boolean);
+  const uniqueOwnerUsernames = [...new Set(ownerUsernames)];
   const idTokens = new Set();
   for (const value of [
     item.genId,
@@ -325,6 +335,10 @@ function parseManifestItem(item, manifestPath, exportedAt) {
     height: item.height || item?._raw?.height || null,
     ratio: item.ratio || null,
     duration: item.duration || item?._raw?.duration_s || null,
+    likeCount: typeof post.like_count === "number" ? post.like_count : null,
+    viewCount: typeof post.view_count === "number" ? post.view_count : null,
+    ownerUsername: uniqueOwnerUsernames[0] || null,
+    ownerUsernames: uniqueOwnerUsernames,
     isLiked: Boolean(item.isLiked),
     previewUrl: item.previewUrl || null,
     downloadUrl: item.downloadUrl || null,
@@ -570,18 +584,60 @@ function safePathFromQuery(inputPath) {
   return resolved;
 }
 
+function serializeListItem(item) {
+  return {
+    id: item.id,
+    kind: item.kind,
+    source: item.source,
+    date: item.date,
+    prompt: item.prompt,
+    genId: item.genId,
+    generationId: item.generationId,
+    taskId: item.taskId,
+    postId: item.postId,
+    duration: item.duration,
+    ratio: item.ratio,
+    width: item.width,
+    height: item.height,
+    likeCount: item.likeCount,
+    viewCount: item.viewCount,
+    ownerUsername: item.ownerUsername,
+    ownerUsernames: item.ownerUsernames || [],
+    isLiked: item.isLiked,
+    previewUrl: item.previewUrl,
+    thumbUrl: item.thumbUrl,
+    localMediaPath: item.local?.mediaPath || null,
+    hasLocalMedia: item.hasLocalMedia,
+    hasLocalText: item.hasLocalText,
+  };
+}
+
 function listItems(index, url) {
   const query = slugForText(url.searchParams.get("query"));
   const source = url.searchParams.get("source");
+  const hasSourcesParam = url.searchParams.has("sources");
+  const sources = url.searchParams
+    .get("sources")
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean) || [];
   const localOnly = url.searchParams.get("localOnly") === "1";
   const withText = url.searchParams.get("withText") === "1";
   const withMedia = url.searchParams.get("withMedia") === "1";
   const sort = url.searchParams.get("sort") || "date-desc";
-  const limit = Math.min(Number(url.searchParams.get("limit") || 200), 1000);
+  const requestedLimit = Number(url.searchParams.get("limit") || 180);
+  const requestedOffset = Number(url.searchParams.get("offset") || 0);
+  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 180, 240));
+  const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
 
   let filtered = index.items;
   if (query) filtered = filtered.filter((item) => item.searchText.includes(query));
-  if (source && source !== "all") filtered = filtered.filter((item) => item.source === source);
+  if (hasSourcesParam) {
+    const allowedSources = new Set(sources);
+    filtered = filtered.filter((item) => allowedSources.has(item.source));
+  } else if (source && source !== "all") {
+    filtered = filtered.filter((item) => item.source === source);
+  }
   if (localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
   if (withText) filtered = filtered.filter((item) => item.hasLocalText);
   if (withMedia) filtered = filtered.filter((item) => item.hasLocalMedia);
@@ -590,9 +646,21 @@ function listItems(index, url) {
   sorted.sort((left, right) => {
     const leftPrompt = left.prompt || "";
     const rightPrompt = right.prompt || "";
+    const leftViews = Number(left.viewCount || 0);
+    const rightViews = Number(right.viewCount || 0);
+    const leftLikes = Number(left.likeCount || 0);
+    const rightLikes = Number(right.likeCount || 0);
     switch (sort) {
       case "date-asc":
         return `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
+      case "views-desc":
+        return rightViews - leftViews || `${right.date || ""}|${right.id}`.localeCompare(`${left.date || ""}|${left.id}`);
+      case "views-asc":
+        return leftViews - rightViews || `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
+      case "likes-desc":
+        return rightLikes - leftLikes || `${right.date || ""}|${right.id}`.localeCompare(`${left.date || ""}|${left.id}`);
+      case "likes-asc":
+        return leftLikes - rightLikes || `${left.date || ""}|${left.id}`.localeCompare(`${right.date || ""}|${right.id}`);
       case "prompt-asc":
         return leftPrompt.localeCompare(rightPrompt, "ja");
       case "prompt-desc":
@@ -609,27 +677,22 @@ function listItems(index, url) {
     }
   });
 
-  return sorted.slice(0, limit).map((item) => ({
-    id: item.id,
-    kind: item.kind,
-    source: item.source,
-    date: item.date,
-    prompt: item.prompt,
-    genId: item.genId,
-    generationId: item.generationId,
-    taskId: item.taskId,
-    postId: item.postId,
-    duration: item.duration,
-    ratio: item.ratio,
-    width: item.width,
-    height: item.height,
-    isLiked: item.isLiked,
-    previewUrl: item.previewUrl,
-    thumbUrl: item.thumbUrl,
-    localMediaPath: item.local?.mediaPath || null,
-    hasLocalMedia: item.hasLocalMedia,
-    hasLocalText: item.hasLocalText,
-  }));
+  const total = sorted.length;
+  const safeOffset = total === 0 ? 0 : Math.min(offset, Math.floor((total - 1) / limit) * limit);
+  const items = sorted.slice(safeOffset, safeOffset + limit).map(serializeListItem);
+
+  return {
+    items,
+    pagination: {
+      total,
+      limit,
+      offset: safeOffset,
+      page: total === 0 ? 0 : Math.floor(safeOffset / limit) + 1,
+      totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      hasPrevious: safeOffset > 0,
+      hasNext: safeOffset + limit < total,
+    },
+  };
 }
 
 function itemDetails(index, url) {
@@ -642,10 +705,12 @@ function handleRequest(request, response) {
 
   if (url.pathname === "/api/index") {
     const index = ensureIndex();
+    const listing = listItems(index, url);
     return json(response, 200, {
       builtAt: index.builtAt,
       stats: index.stats,
-      items: listItems(index, url),
+      items: listing.items,
+      pagination: listing.pagination,
     });
   }
 

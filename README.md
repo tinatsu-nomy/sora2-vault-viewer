@@ -14,10 +14,16 @@ This repository does not include or reuse SoraVault source code. It only works w
   - `sora_v2_profile`
   - `sora_v2_liked`
   - `sora_v2_drafts`
-- Plays local videos inline in a dark gallery UI
+- Plays local videos inline in a dark gallery UI inspired by the Sora feed layout
 - Searches by prompt, `genId`, `postId`, `taskId`, and TXT content
-- Filters by source, local video, and TXT availability
-- Shows prompt, TXT, local file paths, external links, and manifest JSON details
+- Supports source filtering from both the top feed chips and the toolbar source picker
+- Supports pagination and configurable page size (`24 / 60 / 120 / 180`)
+- Supports sorting by date, prompt, duration, views, likes, and source order
+- Shows manifest-derived usernames, like counts, and view counts
+- Displays multiple `owner_profile.username` values when available from cameo profiles
+- Hides raw video IDs from the main viewer UI while preserving searchability
+- Autoplays and loops local videos in both the gallery and the detail player
+- Shows loaded manifest filenames, prompt, TXT, local file paths, external links, and manifest JSON details
 - Includes optional SQLite cache support when available
 
 ## Requirements
@@ -79,6 +85,17 @@ Optional environment variables:
 2. Keep each `mp4` and `txt` pair together using the exported file names from SoraVault 2.0
 3. Restart the server or click `Rescan` in the viewer
 4. Confirm the new items appear in the gallery and detail view
+
+## Recent Viewer Updates
+
+- Added a Sora-like dark gallery layout with inline local playback
+- Added pagination controls and a page-size selector
+- Added source exclusion toggles for `All / Profile / Liked / Drafts`
+- Added a clear button for the search box
+- Added sorting by likes and views
+- Added multi-username display from `cameo_profiles[].owner_profile`
+- Removed raw video IDs from the visible card/detail metadata
+- Added manifest filename visibility in the `Loaded manifests` summary
 
 ## Notes for GitHub
 

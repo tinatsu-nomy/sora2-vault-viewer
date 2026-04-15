@@ -26,7 +26,10 @@
       <section class="toolbar panel">
         <label class="field search-field">
           <span>Search</span>
-          <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
+          <div class="search-row">
+            <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
+            <button id="clearQueryButton" type="button" class="secondary">Clear</button>
+          </div>
         </label>
 
         <label class="field compact">
@@ -41,11 +44,25 @@
           <select id="sort">
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
+            <option value="views-desc">Most views</option>
+            <option value="views-asc">Fewest views</option>
+            <option value="likes-desc">Most likes</option>
+            <option value="likes-asc">Fewest likes</option>
             <option value="prompt-asc">Prompt A→Z</option>
             <option value="prompt-desc">Prompt Z→A</option>
             <option value="duration-desc">Longest first</option>
             <option value="duration-asc">Shortest first</option>
             <option value="source-asc">Source order</option>
+          </select>
+        </label>
+
+        <label class="field compact">
+          <span>Items per page</span>
+          <select id="pageSize">
+            <option value="24" selected>24</option>
+            <option value="60">60</option>
+            <option value="120">120</option>
+            <option value="180">180</option>
           </select>
         </label>
 
@@ -82,6 +99,7 @@
             <p id="resultMeta" class="subtle"></p>
           </div>
           <div id="list" class="gallery-grid"></div>
+          <div id="pagination" class="pagination"></div>
         </section>
 
         <aside class="detail-section panel">
