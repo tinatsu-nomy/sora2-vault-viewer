@@ -4,7 +4,7 @@
   "private": true,
   "description": "Local viewer for Sora 2 manifests and exported media/text data",
   "scripts": {
-    "check": "node --check app/server.js && node --check app/server_runtime.js && node --check app/indexer.js && node --check app/store.js && node --check app/public/app.js",
+    "check": "node --check app/server.js && node --check app/server_runtime.js && node --check app/indexer.js && node --check app/indexing/common.js && node --check app/indexing/text.js && node --check app/indexing/manifest.js && node --check app/indexing/local-match.js && node --check app/store.js && node --check app/http/serializers.js && node --check app/search/query.js && node --check app/search/listing.js && node --check app/state/index-state.js && node --check app/public/state.js && node --check app/public/render.js && node --check app/public/api.js && node --check app/public/app.js",
     "start": "node app/server.js",
     "test": "node scripts/smoke-test.js"
   }
