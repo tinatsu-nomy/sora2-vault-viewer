@@ -17,12 +17,14 @@ This repository does not include or reuse SoraVault source code. It only works w
 - Plays local videos inline in a dark gallery UI inspired by the Sora feed layout
 - Searches by prompt, `genId`, `postId`, `taskId`, and TXT content
 - Supports source filtering from both the top feed chips and the toolbar source picker
+- Defaults to `Local only` so the feed starts with locally available items
 - Supports pagination and configurable page size (`24 / 60 / 120 / 180`)
 - Supports sorting by date, prompt, duration, views, likes, and source order
-- Shows manifest-derived usernames, like counts, and view counts
-- Displays multiple `owner_profile.username` values when available from cameo profiles
+- Shows manifest-derived poster usernames together with like counts and view counts
+- Can optionally display cameo usernames from `cameo_profiles[].owner_profile`
 - Hides raw video IDs from the main viewer UI while preserving searchability
 - Autoplays and loops local videos in both the gallery and the detail player
+- Uses a compact `11:20` gallery card ratio with tighter overlay spacing
 - Shows loaded manifest filenames, prompt, TXT, local file paths, external links, and manifest JSON details
 - Includes optional SQLite cache support when available
 
@@ -91,10 +93,14 @@ Optional environment variables:
 - Added a Sora-like dark gallery layout with inline local playback
 - Added pagination controls and a page-size selector
 - Added source exclusion toggles for `All / Profile / Liked / Drafts`
+- Made `Local only` enabled by default
 - Added a clear button for the search box
 - Added sorting by likes and views
-- Added multi-username display from `cameo_profiles[].owner_profile`
+- Added poster username display from manifest data
+- Added optional cameo username display from `cameo_profiles[].owner_profile`
 - Removed raw video IDs from the visible card/detail metadata
+- Moved likes/views indicators to the top card badges and switched them to symbol display
+- Updated gallery cards to an `11:20` aspect ratio with tighter vertical spacing
 - Added manifest filename visibility in the `Loaded manifests` summary
 
 ## Notes for GitHub

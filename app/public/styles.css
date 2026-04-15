@@ -269,7 +269,8 @@ button.secondary {
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 4px;
 }
 
 .pagination {
@@ -306,7 +307,8 @@ button.secondary {
   border-radius: 0;
   overflow: hidden;
   cursor: pointer;
-  min-height: 420px;
+  aspect-ratio: 11 / 20;
+  min-height: 0;
 }
 
 .gallery-card.active {
@@ -348,20 +350,20 @@ button.secondary {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px;
+  padding: 12px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.32), transparent 28%, transparent 64%, rgba(0, 0, 0, 0.68));
 }
 
 .gallery-top,
 .gallery-bottom {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .gallery-title {
   font-size: 16px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.25;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -375,7 +377,7 @@ button.secondary {
 .links {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .badge,
@@ -384,7 +386,7 @@ button.secondary {
   align-items: center;
   gap: 6px;
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 5px 9px;
   background: rgba(0, 0, 0, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #edf0f8;

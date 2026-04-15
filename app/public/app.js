@@ -15,9 +15,10 @@ const state = {
     query: "",
     sources: ["v2_profile", "v2_liked", "v2_drafts"],
     sort: "date-desc",
-    localOnly: false,
+    localOnly: true,
     withText: false,
     withMedia: false,
+    showCameo: false,
   },
 };
 
@@ -29,6 +30,7 @@ const els = {
   localOnly: document.querySelector("#localOnly"),
   withText: document.querySelector("#withText"),
   withMedia: document.querySelector("#withMedia"),
+  showCameo: document.querySelector("#showCameo"),
   searchButton: document.querySelector("#searchButton"),
   clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
@@ -57,11 +59,16 @@ function formatJson(value) {
 }
 
 function displayTitle(item) {
-  return item.prompt || item.ownerUsernames?.[0] || item.ownerUsername || "Untitled video";
+  return item.prompt || item.posterUsername || "Untitled video";
 }
 
-function formatUsernames(item) {
-  const usernames = item.ownerUsernames?.length ? item.ownerUsernames : item.ownerUsername ? [item.ownerUsername] : [];
+function formatPosterUsername(item) {
+  if (!item.posterUsername) return "";
+  return `@${item.posterUsername}`;
+}
+
+function formatCameoUsernames(item) {
+  const usernames = item.cameoOwnerUsernames?.length ? item.cameoOwnerUsernames : [];
   if (!usernames.length) return "";
   return usernames.map((username) => `@${username}`).join(", ");
 }
@@ -308,7 +315,8 @@ function renderList() {
     .map((item) => {
       const title = displayTitle(item);
       const localMediaUrl = item.localMediaPath ? `/media?path=${encodeURIComponent(item.localMediaPath)}` : null;
-      const usernames = formatUsernames(item);
+      const posterUsername = formatPosterUsername(item);
+      const cameoUsernames = formatCameoUsernames(item);
       return `
         <article class="gallery-card ${item.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(item.id)}">
           ${createMediaMarkup(item)}
@@ -317,6 +325,8 @@ function renderList() {
               <div class="badge-row">
                 <span class="badge">${escapeHtml(sourceLabel(item.source))}</span>
                 ${item.hasLocalMedia ? `<span class="badge good">local play</span>` : `<span class="badge warn">remote only</span>`}
+                ${typeof item.likeCount === "number" ? `<span class="badge">♥ ${escapeHtml(String(item.likeCount))}</span>` : ""}
+                ${typeof item.viewCount === "number" ? `<span class="badge">◉ ${escapeHtml(String(item.viewCount))}</span>` : ""}
               </div>
             </div>
 
@@ -325,9 +335,8 @@ function renderList() {
               <div class="meta-row">
                 ${item.date ? `<span class="meta-pill">${escapeHtml(item.date)}</span>` : ""}
                 ${item.duration ? `<span class="meta-pill">${escapeHtml(String(item.duration))}s</span>` : ""}
-                ${usernames ? `<span class="meta-pill">${escapeHtml(usernames)}</span>` : ""}
-                ${typeof item.likeCount === "number" ? `<span class="meta-pill">likes ${escapeHtml(String(item.likeCount))}</span>` : ""}
-                ${typeof item.viewCount === "number" ? `<span class="meta-pill">views ${escapeHtml(String(item.viewCount))}</span>` : ""}
+                ${posterUsername ? `<span class="meta-pill">poster ${escapeHtml(posterUsername)}</span>` : ""}
+                ${state.filters.showCameo && cameoUsernames ? `<span class="meta-pill">cameo ${escapeHtml(cameoUsernames)}</span>` : ""}
               </div>
               <div class="card-links">
                 ${localMediaUrl ? `<span>plays in viewer</span>` : ""}
@@ -390,7 +399,8 @@ async function renderDetail() {
 
   const item = await fetchDetail(state.selectedId);
   const localMediaUrl = item.local?.mediaPath ? `/media?path=${encodeURIComponent(item.local.mediaPath)}` : null;
-  const usernames = formatUsernames(item);
+  const posterUsername = formatPosterUsername(item);
+  const cameoUsernames = formatCameoUsernames(item);
   const links = [
     item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">previewUrl</a>` : "",
     item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">downloadUrl</a>` : "",
@@ -414,9 +424,14 @@ async function renderDetail() {
       <div class="detail-grid">
         <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceLabel(item.source))}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row"><span>usernames</span><strong>${escapeHtml(usernames)}</strong></div>
-        <div class="detail-row"><span>likes</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
-        <div class="detail-row"><span>views</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
+        <div class="detail-row"><span>poster</span><strong>${escapeHtml(posterUsername)}</strong></div>
+        ${
+          state.filters.showCameo
+            ? `<div class="detail-row"><span>cameo</span><strong>${escapeHtml(cameoUsernames)}</strong></div>`
+            : ""
+        }
+        <div class="detail-row"><span>♥</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
+        <div class="detail-row"><span>◉</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
         <div class="detail-row"><span>resolution</span><strong>${escapeHtml(item.width && item.height ? `${item.width} x ${item.height}` : item.local?.parsed?.resolution || "")}</strong></div>
         <div class="detail-row"><span>ratio</span><strong>${escapeHtml(item.ratio || item.local?.parsed?.aspectRatio || "")}</strong></div>
@@ -471,6 +486,7 @@ function syncFiltersFromForm() {
   state.filters.localOnly = els.localOnly.checked;
   state.filters.withText = els.withText.checked;
   state.filters.withMedia = els.withMedia.checked;
+  state.filters.showCameo = els.showCameo.checked;
 }
 
 function applySourceFilter(source) {
@@ -537,7 +553,7 @@ for (const chip of els.navChips) {
   });
 }
 
-for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
+for (const checkbox of [els.localOnly, els.withText, els.withMedia, els.showCameo]) {
   checkbox.addEventListener("change", async () => {
     resetPagination();
     await refresh();

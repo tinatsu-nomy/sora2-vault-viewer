@@ -295,13 +295,20 @@ function parseTxtRecord(filePath, sourceDirName) {
 function parseManifestItem(item, manifestPath, exportedAt) {
   const post = item?._raw?.post || {};
   const attachment = post.attachments?.[0] || item?._raw || {};
-  const ownerUsernames = [
-    item?._raw?.owner_profile?.username,
-    item?._raw?.profile?.owner_profile?.username,
-    post.owner_profile?.username,
-    post.shared_by_profile?.username,
-    post.original_poster?.username,
+  const posterUsername =
+    post.owner_profile?.username ||
+    post.shared_by_profile?.username ||
+    post.original_poster?.username ||
+    item?._raw?.owner_profile?.username ||
+    item?._raw?.profile?.owner_profile?.username ||
+    null;
+  const cameoOwnerUsernames = [
     ...(post.cameo_profiles || []).map((profile) => profile?.owner_profile?.username),
+  ].filter(Boolean);
+  const uniqueCameoOwnerUsernames = [...new Set(cameoOwnerUsernames)].filter((username) => username !== posterUsername);
+  const ownerUsernames = [
+    posterUsername,
+    ...uniqueCameoOwnerUsernames,
   ].filter(Boolean);
   const uniqueOwnerUsernames = [...new Set(ownerUsernames)];
   const idTokens = new Set();
@@ -337,8 +344,10 @@ function parseManifestItem(item, manifestPath, exportedAt) {
     duration: item.duration || item?._raw?.duration_s || null,
     likeCount: typeof post.like_count === "number" ? post.like_count : null,
     viewCount: typeof post.view_count === "number" ? post.view_count : null,
+    posterUsername,
     ownerUsername: uniqueOwnerUsernames[0] || null,
     ownerUsernames: uniqueOwnerUsernames,
+    cameoOwnerUsernames: uniqueCameoOwnerUsernames,
     isLiked: Boolean(item.isLiked),
     previewUrl: item.previewUrl || null,
     downloadUrl: item.downloadUrl || null,
@@ -601,8 +610,10 @@ function serializeListItem(item) {
     height: item.height,
     likeCount: item.likeCount,
     viewCount: item.viewCount,
+    posterUsername: item.posterUsername || null,
     ownerUsername: item.ownerUsername,
     ownerUsernames: item.ownerUsernames || [],
+    cameoOwnerUsernames: item.cameoOwnerUsernames || [],
     isLiked: item.isLiked,
     previewUrl: item.previewUrl,
     thumbUrl: item.thumbUrl,
