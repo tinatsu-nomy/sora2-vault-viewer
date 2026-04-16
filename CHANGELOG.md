@@ -10,7 +10,7 @@
 
 - Added an Electron desktop entry point while keeping `npm start` available for the browser-based local server workflow
 - Added Windows portable packaging with `npm run build:electron`
-- Set the portable distribution filename to `Sora2 Vault Viewer-portable.exe`
+- Set the portable distribution filename to `Sora2_Vault_Viewer-portable.exe`
 
 ### Runtime Paths And Persistence
 
