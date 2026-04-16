@@ -84,21 +84,36 @@ The Electron app embeds the existing local HTTP viewer and opens it in a desktop
 
 Portable build notes:
 
-- Place `sora2_data/` next to the generated executable, or set `SORA_DATA_DIR` explicitly before launch
+- Place `sora2_data/` in the same parent folder as the generated executable, or set `SORA_DATA_DIR` explicitly before launch
+- Recommended portable layout:
+
+```text
+AnyFolder/
+  Sora2 Vault Viewer-portable.exe
+  sora2_data/
+    soravault_manifest_*.json
+    sora_v2_profile/
+    sora_v2_liked/
+    sora_v2_drafts/
+```
+
 - For `electron-builder` portable builds, the app prefers `PORTABLE_EXECUTABLE_DIR\sora2_data\`
 - Electron stores settings in `app.getPath("userData")\app-data\viewer-config.json`
-- If `SORA_DATA_DIR` is not set, Electron uses the `dataDir` value from that settings file
+- If `SORA_DATA_DIR` is not set, Electron first uses the `dataDir` value from that settings file
+- If no saved `dataDir` exists yet, Electron falls back to `Sora2 Vault Viewer-portable.exe`'s sibling `sora2_data\`
+- If you move only the EXE to a different folder after first launch, the app may continue using the previously saved `dataDir`
+- If the app does not read the `sora2_data\` next to the EXE that you expect, set `SORA_DATA_DIR` explicitly or update `viewer-config.json`
 
 Distribution:
 
 - Release page: [v0.2.2 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.2)
 - Portable download: [Sora2 Vault Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.2/Sora2%20Vault%20Viewer-portable.exe)
-- Place `sora2_data/` next to `Sora2 Vault Viewer-portable.exe` before launch
+- Place `sora2_data/` in the same folder as `Sora2 Vault Viewer-portable.exe` before launch
 - The app stores settings, SQLite cache, and TXT cache under `app.getPath("userData")\app-data\`
 - On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`
 - The Electron settings file is `app.getPath("userData")\app-data\viewer-config.json`
 - On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\viewer-config.json`
-- If `viewer-config.json` contains `dataDir`, Electron uses that path when `SORA_DATA_DIR` is not set
+- If `viewer-config.json` contains `dataDir`, Electron uses that path before checking the EXE's sibling `sora2_data\` when `SORA_DATA_DIR` is not set
 - `PORT` is not stored in `viewer-config.json`; the default HTTP port is `3210` and can be overridden with the `PORT` environment variable
 - Example `viewer-config.json`:
 
@@ -109,6 +124,16 @@ Distribution:
 ```
 
 - Windows may show SmartScreen or other security prompts for unsigned executables
+
+Uninstalling the portable Windows app:
+
+- The portable build does not install itself into `Program Files` and does not add a standard Windows uninstaller
+- To remove the app itself, close it and delete `Sora2 Vault Viewer-portable.exe`
+- To remove your exported data from the same portable folder, also delete the adjacent `sora2_data/` folder if you no longer need it
+- To remove saved settings and caches, delete `app.getPath("userData")\app-data\`
+- On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`
+- Deleting `app-data\` removes `viewer-config.json`, the SQLite cache, and the TXT cache
+- If you want to keep your export data but reset the app state, delete only `app-data\` and keep `sora2_data/`
 
 Optional environment variables:
 - `PORT`: starting port for the local server. Defaults to `3210`
