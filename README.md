@@ -103,6 +103,7 @@ AnyFolder/
 - If no saved `dataDir` exists yet, Electron falls back to `Sora2_Vault_Viewer-portable.exe`'s sibling `sora2_data\`
 - If you move only the EXE to a different folder after first launch, the app may continue using the previously saved `dataDir`
 - If the app does not read the `sora2_data\` next to the EXE that you expect, set `SORA_DATA_DIR` explicitly or update `viewer-config.json`
+- If you change the data directory after the app has already been launched, initialize `app-data\` as well so the saved `dataDir` and caches do not keep pointing at the previous location
 
 Distribution:
 

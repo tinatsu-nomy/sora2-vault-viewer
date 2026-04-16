@@ -14,6 +14,28 @@ function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function formatResolution(width, height) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "";
+  return `${width} x ${height}`;
+}
+
+function greatestCommonDivisor(left, right) {
+  let a = Math.abs(Number(left) || 0);
+  let b = Math.abs(Number(right) || 0);
+  while (b) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+}
+
+function formatAspectRatio(width, height) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "";
+  const divisor = greatestCommonDivisor(width, height);
+  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`;
+}
+
 function normalizedPromptText(value) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -51,6 +73,18 @@ function sourceLabel(source) {
   if (source === "v2_drafts") return "drafts";
   if (source === "v2_liked") return "liked";
   return source || "unknown";
+}
+
+function metadataResolutionText(item) {
+  const manifestResolution = formatResolution(item?.width, item?.height);
+  if (manifestResolution) return manifestResolution;
+  return String(item?.local?.parsed?.resolution || "").trim();
+}
+
+function metadataRatioText(item) {
+  const manifestRatio = String(item?.ratio || "").trim();
+  if (manifestRatio) return manifestRatio;
+  return String(item?.local?.parsed?.aspectRatio || "").trim();
 }
 
 function syncNavChips() {
@@ -580,6 +614,8 @@ async function renderDetail() {
   ]
     .filter(Boolean)
     .join("");
+  const metadataResolution = metadataResolutionText(item);
+  const metadataRatio = metadataRatioText(item);
 
   els.detail.innerHTML = `
     ${
@@ -604,8 +640,10 @@ async function renderDetail() {
         <div class="detail-row"><span>♥</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
         <div class="detail-row"><span>◉</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
-        <div class="detail-row"><span>resolution</span><strong>${escapeHtml(item.width && item.height ? `${item.width} x ${item.height}` : item.local?.parsed?.resolution || "")}</strong></div>
-        <div class="detail-row"><span>ratio</span><strong>${escapeHtml(item.ratio || item.local?.parsed?.aspectRatio || "")}</strong></div>
+        <div class="detail-row"><span>resolution</span><strong data-detail-resolution>${escapeHtml(metadataResolution)}</strong></div>
+        <div class="detail-row hidden" data-detail-metadata-resolution-row><span>metadata resolution</span><strong>${escapeHtml(metadataResolution)}</strong></div>
+        <div class="detail-row"><span>ratio</span><strong data-detail-ratio>${escapeHtml(metadataRatio)}</strong></div>
+        <div class="detail-row hidden" data-detail-metadata-ratio-row><span>metadata ratio</span><strong>${escapeHtml(metadataRatio)}</strong></div>
       </div>
     </div>
 
@@ -658,6 +696,35 @@ async function renderDetail() {
 
   const detailVideo = els.detail.querySelector(".detail-player video");
   if (detailVideo) {
+    const resolutionValue = els.detail.querySelector("[data-detail-resolution]");
+    const ratioValue = els.detail.querySelector("[data-detail-ratio]");
+    const metadataResolutionRow = els.detail.querySelector("[data-detail-metadata-resolution-row]");
+    const metadataRatioRow = els.detail.querySelector("[data-detail-metadata-ratio-row]");
+
+    const syncActualMediaFacts = () => {
+      const actualResolution = formatResolution(detailVideo.videoWidth, detailVideo.videoHeight);
+      const actualRatio = formatAspectRatio(detailVideo.videoWidth, detailVideo.videoHeight);
+
+      if (actualResolution && resolutionValue) {
+        resolutionValue.textContent = actualResolution;
+        if (metadataResolutionRow) {
+          metadataResolutionRow.classList.toggle("hidden", !metadataResolution || metadataResolution === actualResolution);
+        }
+      }
+
+      if (actualRatio && ratioValue) {
+        ratioValue.textContent = actualRatio;
+        if (metadataRatioRow) {
+          metadataRatioRow.classList.toggle("hidden", !metadataRatio || metadataRatio === actualRatio);
+        }
+      }
+    };
+
+    if (detailVideo.readyState >= 1) {
+      syncActualMediaFacts();
+    } else {
+      detailVideo.addEventListener("loadedmetadata", syncActualMediaFacts, { once: true });
+    }
     detailVideo.play().catch(() => {});
   }
 }
