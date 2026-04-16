@@ -41,7 +41,7 @@ function createListingService({
     const values = [];
 
     if (params.query) {
-      const ftsQuery = buildFtsMatchQuery(params.query);
+      const ftsQuery = params.forceSimpleTextSearch ? null : buildFtsMatchQuery(params.query);
       if (ftsQuery) {
         joins.push("JOIN items_fts ON items_fts.id = items.id");
         where.push("items_fts MATCH ?");

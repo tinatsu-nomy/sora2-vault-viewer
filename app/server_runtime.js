@@ -230,6 +230,7 @@ function startServer(port = DEFAULT_PORT, attempt = 0) {
     const actualPort = typeof address === "object" && address ? address.port : currentPort;
     const displayHost = BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST;
     console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
+    void indexState.startBuild();
     void logIndexSummary();
     console.log("Press Ctrl+C in this terminal to stop the server.");
   });

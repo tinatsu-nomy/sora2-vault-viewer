@@ -39,6 +39,7 @@ function createIndexState({ initialIndex = null, buildIndex }) {
   }
 
   async function ensureReady() {
+    if (state.buildPromise) return state.buildPromise;
     if (state.current) return state.current;
     return startBuild();
   }

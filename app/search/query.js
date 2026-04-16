@@ -1,35 +1,39 @@
 const { parseDateValue, slugForText } = require("../indexer");
 
+function isUsernameOnlyQuery(text) {
+  return /^@[!-~]+$/.test(text);
+}
+
 function parseSearchQuery(value) {
   if (value == null) {
     return {
       textQuery: "",
       usernamePrefixes: [],
+      forceSimpleTextSearch: false,
     };
   }
 
-  const terms = String(value)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  const textTerms = [];
-  const usernamePrefixes = [];
+  const text = String(value).trim();
+  if (!text) {
+    return {
+      textQuery: "",
+      usernamePrefixes: [],
+      forceSimpleTextSearch: false,
+    };
+  }
 
-  for (const term of terms) {
-    if (!term.startsWith("@")) {
-      textTerms.push(term);
-      continue;
-    }
-
-    const normalizedUsername = term.replace(/^@+/, "").trim();
-    if (normalizedUsername) {
-      usernamePrefixes.push(slugForText(normalizedUsername));
-    }
+  if (!/\s/.test(text) && isUsernameOnlyQuery(text)) {
+    return {
+      textQuery: "",
+      usernamePrefixes: [slugForText(text.slice(1))],
+      forceSimpleTextSearch: false,
+    };
   }
 
   return {
-    textQuery: slugForText(textTerms.join(" ")),
-    usernamePrefixes,
+    textQuery: slugForText(text),
+    usernamePrefixes: [],
+    forceSimpleTextSearch: /\s|@/.test(text),
   };
 }
 
@@ -72,6 +76,7 @@ function parseListParams(url) {
   return {
     query,
     usernamePrefixes: searchQuery.usernamePrefixes,
+    forceSimpleTextSearch: searchQuery.forceSimpleTextSearch,
     source,
     hasSourcesParam,
     sources,

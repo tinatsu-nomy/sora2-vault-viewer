@@ -15,17 +15,23 @@ const RETRY_PORT = 33230;
 process.env.PORT = String(PORT);
 process.env.SORA_DATA_DIR = DATA_DIR;
 process.env.SORA_ENABLE_SQLITE_CACHE = "1";
-process.env.SORA_SQLITE_PATH = ":memory:";
 process.env.SORA_BIND_HOST = "127.0.0.1";
 
-const { startServer } = require(path.join(ROOT, "app", "server.js"));
+function loadStartServer({ dbPath } = {}) {
+  process.env.SORA_SQLITE_PATH = dbPath;
+  const serverPath = path.join(ROOT, "app", "server.js");
+  const runtimePath = path.join(ROOT, "app", "server_runtime.js");
+  delete require.cache[require.resolve(serverPath)];
+  delete require.cache[require.resolve(runtimePath)];
+  return require(serverPath).startServer;
+}
 
 function writeFixtureData() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
   const manifest = {
     exported_at: "2026-04-15T00:00:00Z",
-    total: 4,
+    total: 5,
     scan_sources: ["v2_profile"],
     items: [
       {
@@ -92,6 +98,18 @@ function writeFixtureData() {
       {
         source: "v2_profile",
         date: "2026-04-12",
+        prompt: "Literal @smoke marker",
+        _raw: {
+          profile: { username: "literal_marker" },
+          post: {
+            text: "Literal @smoke marker",
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_profile",
+        date: "2026-04-11",
         prompt: "Fallback manifest beta",
         _raw: {
           profile: { username: "fallback_beta" },
@@ -130,6 +148,29 @@ function writeFixtureData() {
   );
 }
 
+function appendRestartFixtureData() {
+  const manifestPath = path.join(DATA_DIR, "soravault_manifest_smoke.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  manifest.total += 1;
+  manifest.items.push({
+    source: "v2_profile",
+    genId: "gen_after_restart",
+    postId: "s_after_restart",
+    date: "2026-04-17",
+    prompt: "Loaded after restart",
+    _raw: {
+      profile: { username: "restart_user" },
+      post: {
+        id: "s_after_restart",
+        text: "Loaded after restart",
+        cameo_profiles: [],
+        attachments: [{ generation_id: "gen_after_restart" }],
+      },
+    },
+  });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+}
+
 function waitForServer(server, { rejectOnError = true } = {}) {
   return new Promise((resolve, reject) => {
     if (server.listening) {
@@ -159,6 +200,7 @@ function waitForServer(server, { rejectOnError = true } = {}) {
 }
 
 async function assertPortRetryWorks() {
+  const startServer = loadStartServer({ dbPath: path.join(TMP_ROOT, "retry.sqlite") });
   const blocker = http.createServer((_request, response) => {
     response.end("busy");
   });
@@ -180,9 +222,45 @@ async function assertPortRetryWorks() {
   }
 }
 
+async function assertRestartRefreshesCachedIndex() {
+  const restartDbPath = path.join(TMP_ROOT, "restart.sqlite");
+  const firstStartServer = loadStartServer({ dbPath: restartDbPath });
+  const firstServer = firstStartServer(PORT);
+
+  try {
+    await waitForServer(firstServer);
+    const firstResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
+    assert.equal(firstResponse.status, 200, "Expected initial startup index to return 200");
+    const firstPayload = await firstResponse.json();
+    assert.equal(firstPayload.stats.totalItems, 5, "Expected initial startup to index the fixture manifest");
+  } finally {
+    await new Promise((resolve) => firstServer.close(resolve));
+  }
+
+  appendRestartFixtureData();
+
+  const secondStartServer = loadStartServer({ dbPath: restartDbPath });
+  const secondServer = secondStartServer(PORT);
+  try {
+    await waitForServer(secondServer);
+    const secondResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
+    assert.equal(secondResponse.status, 200, "Expected restarted server index to return 200");
+    const secondPayload = await secondResponse.json();
+    assert.equal(secondPayload.stats.totalItems, 6, "Expected restart to rebuild the index from disk instead of serving stale cached metadata");
+    assert(
+      secondPayload.items.some((item) => item.genId === "gen_after_restart"),
+      "Expected restart rebuild to include the newly added manifest item",
+    );
+  } finally {
+    await new Promise((resolve) => secondServer.close(resolve));
+  }
+}
+
 async function run() {
   writeFixtureData();
   await assertPortRetryWorks();
+  await assertRestartRefreshesCachedIndex();
+  const startServer = loadStartServer({ dbPath: path.join(TMP_ROOT, "main.sqlite") });
   const server = startServer(PORT);
 
   try {
@@ -191,10 +269,10 @@ async function run() {
     const indexResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
     assert.equal(indexResponse.status, 200, "Expected /api/index to return 200");
     const indexPayload = await indexResponse.json();
-    assert.equal(indexPayload.items.length, 4, "Expected all manifest items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 4, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.items.length, 6, "Expected all manifest items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 6, "Expected stats to report all indexed items");
     assert.equal(indexPayload.stats.withLocalMedia, 1, "Expected only one item to match the local media pair");
-    assert.equal(indexPayload.stats.database.enabled, true, "Expected SQLite-backed index metadata");
+    assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
     const mainItem = indexPayload.items.find((item) => item.genId === "gen_smoke123");
     assert(mainItem, "Expected the primary fixture item to be present");
     assert.equal(mainItem.mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
@@ -224,6 +302,14 @@ async function run() {
     const usernameNonPrefixSearchPayload = await usernameNonPrefixSearchResponse.json();
     assert.equal(usernameNonPrefixSearchPayload.items.length, 0, "Expected non-prefix @username search not to match manifest usernames");
 
+    const literalAtSearchResponse = await fetch(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("@smoke marker")}`,
+    );
+    assert.equal(literalAtSearchResponse.status, 200, "Expected spaced @ query to return 200");
+    const literalAtSearchPayload = await literalAtSearchResponse.json();
+    assert.equal(literalAtSearchPayload.items.length, 1, "Expected spaced @ query to use simple text search");
+    assert.equal(literalAtSearchPayload.items[0].prompt, "Literal @smoke marker");
+
     const fallbackSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`);
     assert.equal(fallbackSearchResponse.status, 200, "Expected fallback prompt search to return 200");
     const fallbackSearchPayload = await fallbackSearchResponse.json();
@@ -237,7 +323,7 @@ async function run() {
     assert.equal(dateRangeHitPayload.items.length, 1, "Expected the fixture item to match its own date range");
 
     const dateRangeMissResponse = await fetch(
-      `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-16")}`,
+      `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-18")}`,
     );
     assert.equal(dateRangeMissResponse.status, 200, "Expected out-of-range date search to return 200");
     const dateRangeMissPayload = await dateRangeMissResponse.json();
