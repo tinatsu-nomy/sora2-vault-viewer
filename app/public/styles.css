@@ -375,6 +375,22 @@ button:disabled {
   grid-column: span 2;
 }
 
+.summary-card.summary-card-wide {
+  grid-column: 1 / -1;
+}
+
+.summary-card.summary-card-light {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #111216;
+}
+
+.summary-card.summary-card-light strong,
+.summary-card.summary-card-light small,
+.summary-card.summary-card-light .subtle {
+  color: #111216;
+}
+
 .content {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
@@ -452,9 +468,10 @@ button:disabled {
 
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, 200px);
   column-gap: 8px;
   row-gap: 4px;
+  justify-content: center;
 }
 
 .pagination {
@@ -580,7 +597,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 12px;
+  padding: 9px;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.32), transparent 28%, transparent 64%, rgba(0, 0, 0, 0.68));
 }
@@ -588,13 +605,13 @@ button:disabled {
 .gallery-top,
 .gallery-bottom {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .gallery-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.15;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -608,20 +625,21 @@ button:disabled {
 .links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
 }
 
 .badge,
 .meta-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border-radius: 10px;
-  padding: 5px 9px;
+  gap: 4px;
+  border-radius: 5px;
+  padding: 3px 7px;
   background: rgba(0, 0, 0, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #edf0f8;
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1.1;
 }
 
 .badge.good {
@@ -636,7 +654,8 @@ button:disabled {
   pointer-events: auto;
   color: white;
   text-decoration: underline;
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1.1;
 }
 
 .detail {
@@ -776,6 +795,11 @@ button:disabled {
   .detail-section {
     position: static;
     max-height: none;
+  }
+
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fit, 200px);
+    justify-content: center;
   }
 }
 

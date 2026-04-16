@@ -147,6 +147,18 @@ function renderIndexStatus() {
 
 function renderStats() {
   const stats = state.stats;
+  const pathRows = [
+    stats.paths?.dataDir ? `<div class="subtle">data: ${escapeHtml(stats.paths.dataDir)}</div>` : "",
+    stats.paths?.appDataDir ? `<div class="subtle">app-data: ${escapeHtml(stats.paths.appDataDir)}</div>` : "",
+    stats.paths?.configPath ? `<div class="subtle">config: ${escapeHtml(stats.paths.configPath)}</div>` : "",
+    stats.paths?.sqlitePath ? `<div class="subtle">sqlite: ${escapeHtml(stats.paths.sqlitePath)}</div>` : "",
+    stats.paths?.txtCachePath ? `<div class="subtle">txt-cache: ${escapeHtml(stats.paths.txtCachePath)}</div>` : "",
+  ]
+    .filter(Boolean)
+    .join("");
+  const startupLogs = (stats.startupLogs || [])
+    .map((line) => `<div class="subtle">${escapeHtml(line)}</div>`)
+    .join("");
   const manifestRows = (stats.manifests || [])
     .map((manifest) => {
       const fileName = String(manifest.file || "").split(/[\\/]/).pop() || "unknown";
@@ -184,6 +196,14 @@ function renderStats() {
     <article class="summary-card db-card">
       <strong>Loaded manifests</strong>
       ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
+    </article>
+    <article class="summary-card db-card summary-card-wide summary-card-light">
+      <strong>Paths</strong>
+      ${pathRows || '<div class="subtle">No runtime paths available</div>'}
+    </article>
+    <article class="summary-card db-card summary-card-wide summary-card-light">
+      <strong>Startup Log</strong>
+      ${startupLogs || '<div class="subtle">No startup logs available</div>'}
     </article>
   `;
 }

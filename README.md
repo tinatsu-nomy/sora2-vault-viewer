@@ -16,6 +16,8 @@ This project assumes the data structure produced by [SoraVault 2.0](https://gith
 - Supports keyboard browsing across gallery cards with `Tab`, `Enter`, `Space`, and arrow keys
 - Shows manifest-derived metadata such as `posted by`, likes, views, loaded manifest names, and TXT content
 
+For release notes and change summaries, see [CHANGELOG.md](CHANGELOG.md).
+
 ## Quick Start
 
 Requirements:
@@ -64,12 +66,83 @@ npm start
 
 The app starts at `http://localhost:3210` by default and automatically moves to the next free port if needed. To stop the server, return to the terminal where it is running and press `Ctrl+C`.
 
+Electron desktop app:
+
+```powershell
+npm install
+npm run start:electron
+```
+
+Portable Windows build:
+
+```powershell
+npm install
+npm run build:electron
+```
+
+The Electron app embeds the existing local HTTP viewer and opens it in a desktop window.
+
+Portable build notes:
+
+- Place `sora2_data/` in the same parent folder as the generated executable, or set `SORA_DATA_DIR` explicitly before launch
+- Recommended portable layout:
+
+```text
+AnyFolder/
+  Sora2 Vault Viewer-portable.exe
+  sora2_data/
+    soravault_manifest_*.json
+    sora_v2_profile/
+    sora_v2_liked/
+    sora_v2_drafts/
+```
+
+- For `electron-builder` portable builds, the app prefers `PORTABLE_EXECUTABLE_DIR\sora2_data\`
+- Electron stores settings in `app.getPath("userData")\app-data\viewer-config.json`
+- If `SORA_DATA_DIR` is not set, Electron first uses the `dataDir` value from that settings file
+- If no saved `dataDir` exists yet, Electron falls back to `Sora2 Vault Viewer-portable.exe`'s sibling `sora2_data\`
+- If you move only the EXE to a different folder after first launch, the app may continue using the previously saved `dataDir`
+- If the app does not read the `sora2_data\` next to the EXE that you expect, set `SORA_DATA_DIR` explicitly or update `viewer-config.json`
+
+Distribution:
+
+- Release page: [v0.2.2 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.2)
+- Portable download: [Sora2 Vault Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.2/Sora2%20Vault%20Viewer-portable.exe)
+- Place `sora2_data/` in the same folder as `Sora2 Vault Viewer-portable.exe` before launch
+- The app stores settings, SQLite cache, and TXT cache under `app.getPath("userData")\app-data\`
+- On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`
+- The Electron settings file is `app.getPath("userData")\app-data\viewer-config.json`
+- On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\viewer-config.json`
+- If `viewer-config.json` contains `dataDir`, Electron uses that path before checking the EXE's sibling `sora2_data\` when `SORA_DATA_DIR` is not set
+- `PORT` is not stored in `viewer-config.json`; the default HTTP port is `3210` and can be overridden with the `PORT` environment variable
+- Example `viewer-config.json`:
+
+```json
+{
+  "dataDir": "D:\\SoraExports\\sora2_data"
+}
+```
+
+- Windows may show SmartScreen or other security prompts for unsigned executables
+
+Uninstalling the portable Windows app:
+
+- The portable build does not install itself into `Program Files` and does not add a standard Windows uninstaller
+- To remove the app itself, close it and delete `Sora2 Vault Viewer-portable.exe`
+- To remove your exported data from the same portable folder, also delete the adjacent `sora2_data/` folder if you no longer need it
+- To remove saved settings and caches, delete `app.getPath("userData")\app-data\`
+- On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`
+- Deleting `app-data\` removes `viewer-config.json`, the SQLite cache, and the TXT cache
+- If you want to keep your export data but reset the app state, delete only `app-data\` and keep `sora2_data/`
+
 Optional environment variables:
-- `PORT`: starting port for the local server
+- `PORT`: starting port for the local server. Defaults to `3210`
 - `SORA_BIND_HOST`: bind host for the HTTP server. Defaults to `127.0.0.1`
 - `SORA_DATA_DIR`: override the data directory location
 - `SORA_VIEWER_ROOT`: override the repository root when `sora2_data/` lives directly under a different parent directory
+- `SORA_APP_DATA_DIR`: override the directory used for SQLite, TXT cache, and the Electron settings file
 - `SORA_ENABLE_SQLITE_CACHE`: defaults to enabled. Set `0` to disable the local SQLite cache
+- `SORA_SQLITE_PATH`: override the SQLite database file path
 
 Common examples:
 
@@ -80,20 +153,20 @@ npm start
 
 ```powershell
 # disable the SQLite cache
-$env:SORA_ENABLE_SQLITE_CACHE = "0"
+$ENV:SORA_ENABLE_SQLITE_CACHE = "0"
 npm start
 ```
 
 ```powershell
 # custom data directory
-$env:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
+$ENV:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
 npm start
 ```
 
 ```powershell
 # custom port
-$env:PORT = "3211"
-$env:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
+$ENV:PORT = "3211"
+$ENV:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
 npm start
 ```
 
@@ -126,22 +199,16 @@ In practice, a SoraVault 2.0 filename template such as `{date}_{genId}` has been
 
 If these conditions are not met, the files can still appear as `local-only` items, but they will not be linked to manifest JSON metadata.
 
-## Behavior / Limits
-
-- `Local only` is enabled by default so the initial feed focuses on files that exist locally
-- The server binds to loopback (`127.0.0.1`) by default, so it is local-only unless you explicitly override `SORA_BIND_HOST`
-- `Rescan` re-detects `soravault_manifest_*.json` files each time, so newly added manifests can be picked up without restarting the server
-- Malformed or partially written manifest JSON files are skipped and recorded instead of terminating the viewer
-- Index, detail, rebuild, and media failures are surfaced as recoverable UI or API errors instead of silently breaking the app
-- The `/media` endpoint serves only indexed local `mp4` and `txt` files
-- Sora 1 data is not supported because no Sora 1 export data was available for development or validation
-
 ## Troubleshooting
 
 - If new manifests or files do not appear, click `Rescan` and then check `Loaded manifests`
 - If a manifest is malformed, the viewer skips it and continues indexing the remaining files
 - If the UI shows an index, detail, or rebuild error, fix the underlying file issue and try `Rescan` again
 - Run `npm run check` for syntax validation and `npm test` for the smoke test fixture
+- `Local only` is enabled by default, so the initial feed focuses on files that exist locally
+- The server binds to loopback (`127.0.0.1`) by default, so it stays local-only unless you explicitly override `SORA_BIND_HOST`
+- The `/media` endpoint serves only indexed local `mp4` and `txt` files
+- Sora 1 data is not supported
 - Local media, manifests, caches, and backup logs are intentionally excluded by `.gitignore`
 - This repository is provided as-is, without warranty or guarantee of compatibility, correctness, completeness, or fitness for a particular purpose
 - Behavior is intended for SoraVault 2.0 export layouts and is not guaranteed for other export formats or future versions

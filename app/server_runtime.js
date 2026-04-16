@@ -29,6 +29,9 @@ const APP_DATA_DIR = process.env.SORA_APP_DATA_DIR
   : path.join(ROOT, "app", "data");
 const DB_PATH = process.env.SORA_SQLITE_PATH || path.join(APP_DATA_DIR, "sora-index.sqlite");
 const TXT_CACHE_PATH = path.join(APP_DATA_DIR, "txt-record-cache.json");
+const CONFIG_PATH = process.env.SORA_CONFIG_PATH
+  ? path.resolve(process.env.SORA_CONFIG_PATH)
+  : null;
 
 const SOURCE_DIRS = {
   v2_drafts: path.join(DATA_DIR, "sora_v2_drafts"),
@@ -48,6 +51,14 @@ const store = createStore({
 const serializers = createSerializers({
   debugMode: DEBUG_MODE,
   enableSqliteCache: ENABLE_SQLITE_CACHE,
+  runtimePaths: {
+    dataDir: DATA_DIR,
+    appDataDir: APP_DATA_DIR,
+    dbPath: DB_PATH,
+    txtCachePath: TXT_CACHE_PATH,
+    configPath: CONFIG_PATH,
+    publicDir: PUBLIC_DIR,
+  },
 });
 
 const listingService = createListingService({
@@ -229,6 +240,17 @@ async function logIndexSummary() {
   }
 }
 
+function startupLogLines(port) {
+  return [
+    `Viewer URL: http://${BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST}:${port}`,
+    `Data directory: ${DATA_DIR}`,
+    `App data directory: ${APP_DATA_DIR}`,
+    CONFIG_PATH ? `Config file: ${CONFIG_PATH}` : null,
+    `SQLite cache: ${ENABLE_SQLITE_CACHE ? DB_PATH : "disabled by environment"}`,
+    `TXT cache: ${TXT_CACHE_PATH}`,
+  ].filter(Boolean);
+}
+
 function startServer(port = DEFAULT_PORT, attempt = 0) {
   const server = http.createServer((request, response) => {
     void handleRequest(request, response);
@@ -258,6 +280,9 @@ function startServer(port = DEFAULT_PORT, attempt = 0) {
     const actualPort = typeof address === "object" && address ? address.port : currentPort;
     const displayHost = BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST;
     console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
+    for (const line of startupLogLines(actualPort)) {
+      console.log(line);
+    }
     void indexState.startBuild();
     void logIndexSummary();
     console.log("Press Ctrl+C in this terminal to stop the server.");
