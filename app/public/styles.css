@@ -176,6 +176,11 @@ h2 {
   color: var(--muted);
 }
 
+.field > span {
+  font-weight: 700;
+  color: var(--text);
+}
+
 .toggle {
   grid-template-columns: auto 1fr;
   align-items: center;
