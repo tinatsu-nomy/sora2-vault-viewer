@@ -2,10 +2,45 @@
   "name": "sora2-vault-viewer",
   "version": "0.2.2",
   "private": true,
+  "main": "electron/main.js",
+  "author": "tinatsu-nomy",
   "description": "Local viewer for Sora 2 manifests and exported media/text data",
   "scripts": {
-    "check": "node --check app/server.js && node --check app/server_runtime.js && node --check app/indexer.js && node --check app/indexing/common.js && node --check app/indexing/text.js && node --check app/indexing/manifest.js && node --check app/indexing/local-match.js && node --check app/store.js && node --check app/http/serializers.js && node --check app/search/query.js && node --check app/search/listing.js && node --check app/state/index-state.js && node --check app/public/state.js && node --check app/public/render.js && node --check app/public/api.js && node --check app/public/app.js",
+    "check": "node --check app/server.js && node --check app/server_runtime.js && node --check app/indexer.js && node --check app/indexing/common.js && node --check app/indexing/text.js && node --check app/indexing/manifest.js && node --check app/indexing/local-match.js && node --check app/store.js && node --check app/http/serializers.js && node --check app/search/query.js && node --check app/search/listing.js && node --check app/state/index-state.js && node --check app/public/state.js && node --check app/public/render.js && node --check app/public/api.js && node --check app/public/app.js && node --check electron/main.js",
     "start": "node app/server.js",
+    "start:electron": "electron .",
+    "dist:electron": "electron-builder --dir",
+    "build:electron": "electron-builder",
     "test": "node scripts/smoke-test.js"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "local.sora2.vault-viewer",
+    "productName": "Sora2 Vault Viewer",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "app/**/*",
+      "electron/**/*",
+      "package.json",
+      "!app/data{,/**/*}",
+      "!sora2_data{,/**/*}",
+      "!_backups{,/**/*}",
+      "!.tmp{,/**/*}",
+      "!**/*.log"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-portable.${ext}"
+    }
   }
 }

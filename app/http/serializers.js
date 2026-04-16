@@ -2,7 +2,7 @@ const path = require("path");
 
 const { parseJson } = require("../indexer");
 
-function createSerializers({ debugMode, enableSqliteCache }) {
+function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) {
   function mediaUrlFor(itemId, kind = "media") {
     return `/media?id=${encodeURIComponent(itemId)}&kind=${encodeURIComponent(kind)}`;
   }
@@ -99,6 +99,22 @@ function createSerializers({ debugMode, enableSqliteCache }) {
         error: databaseStatus?.error || null,
         configured: enableSqliteCache,
       },
+      paths: {
+        dataDir: runtimePaths.dataDir || null,
+        appDataDir: runtimePaths.appDataDir || null,
+        configPath: runtimePaths.configPath || null,
+        sqlitePath: runtimePaths.dbPath || null,
+        txtCachePath: runtimePaths.txtCachePath || null,
+      },
+      startupLogs: [
+        runtimePaths.dataDir ? `Data directory: ${runtimePaths.dataDir}` : null,
+        runtimePaths.appDataDir ? `App data directory: ${runtimePaths.appDataDir}` : null,
+        runtimePaths.configPath ? `Config file: ${runtimePaths.configPath}` : null,
+        runtimePaths.dbPath
+          ? `SQLite cache: ${enableSqliteCache ? runtimePaths.dbPath : "disabled by environment"}`
+          : null,
+        runtimePaths.txtCachePath ? `TXT cache: ${runtimePaths.txtCachePath}` : null,
+      ].filter(Boolean),
       debugEnabled: debugMode,
     };
   }
