@@ -37,6 +37,12 @@ function currentPageQueryString() {
 }
 
 function applyIndexPayload(payload) {
+  state.builtAt = payload.builtAt || null;
+  state.indexStatus = payload.indexStatus || {
+    isRefreshing: false,
+    isStale: false,
+    refreshError: null,
+  };
   state.items = payload.items;
   state.stats = payload.stats;
   state.pagination = payload.pagination || {
@@ -48,6 +54,7 @@ function applyIndexPayload(payload) {
     hasPrevious: false,
     hasNext: false,
   };
+  viewer.renderIndexStatus();
   viewer.renderStats();
   viewer.renderList();
   viewer.renderPagination();
@@ -87,10 +94,11 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
   const requestToken = ++viewer.indexRequestToken;
   const queryString = currentPageQueryString();
   const loadingMessage = reason === "search" ? "Updating results..." : "Loading...";
-  const showGalleryLoading = reason !== "page";
+  const showGalleryLoading = reason !== "page" && reason !== "background-refresh";
 
-  if (useCache && viewer.pageCache.has(queryString)) {
+  if (useCache && !state.indexStatus?.isRefreshing && viewer.pageCache.has(queryString)) {
     applyIndexPayload(viewer.pageCache.get(queryString));
+    viewer.scheduleIndexRefreshPoll();
     void viewer.renderDetail();
     prefetchNeighborPages();
     return;
@@ -110,11 +118,18 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
     if (!response.ok) {
       const message = payload?.details ? `${payload.error || "Failed to load index"}: ${payload.details}` : payload?.error || "Failed to load index";
       viewer.renderIndexError(message);
+      viewer.clearIndexRefreshPoll();
       return;
     }
 
+    const builtAtChanged = state.builtAt && payload.builtAt && state.builtAt !== payload.builtAt;
+    if (builtAtChanged) {
+      viewer.pageCache.clear();
+      viewer.detailCache.clear();
+    }
     viewer.rememberPageCache(queryString, payload);
     applyIndexPayload(payload);
+    viewer.scheduleIndexRefreshPoll();
     await viewer.renderDetail();
     prefetchNeighborPages();
   } catch (error) {
@@ -122,6 +137,7 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
       return;
     }
     viewer.renderIndexError(error?.message || "Failed to load index");
+    viewer.clearIndexRefreshPoll();
   } finally {
     if (showGalleryLoading && requestToken === viewer.indexRequestToken) {
       viewer.setSectionLoading(viewer.els.gallerySection, false);

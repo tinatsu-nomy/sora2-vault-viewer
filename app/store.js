@@ -9,7 +9,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     enabled: false,
     path: dbPath,
     savedItems: 0,
-    error: enabled ? null : "disabled by default",
+    error: enabled ? null : "disabled by environment",
   };
 
   function getStatus() {

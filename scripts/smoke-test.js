@@ -199,6 +199,22 @@ function waitForServer(server, { rejectOnError = true } = {}) {
   });
 }
 
+async function fetchIndexPayload(port, query = "") {
+  const response = await fetch(`http://127.0.0.1:${port}/api/index${query}`);
+  assert.equal(response.status, 200, "Expected /api/index to return 200");
+  return response.json();
+}
+
+async function waitForCondition(check, { timeoutMs = 15000, intervalMs = 150 } = {}) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await check();
+    if (result) return result;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("Timed out waiting for the expected condition.");
+}
+
 async function assertPortRetryWorks() {
   const startServer = loadStartServer({ dbPath: path.join(TMP_ROOT, "retry.sqlite") });
   const blocker = http.createServer((_request, response) => {
@@ -229,9 +245,7 @@ async function assertRestartRefreshesCachedIndex() {
 
   try {
     await waitForServer(firstServer);
-    const firstResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
-    assert.equal(firstResponse.status, 200, "Expected initial startup index to return 200");
-    const firstPayload = await firstResponse.json();
+    const firstPayload = await fetchIndexPayload(PORT);
     assert.equal(firstPayload.stats.totalItems, 5, "Expected initial startup to index the fixture manifest");
   } finally {
     await new Promise((resolve) => firstServer.close(resolve));
@@ -243,10 +257,24 @@ async function assertRestartRefreshesCachedIndex() {
   const secondServer = secondStartServer(PORT);
   try {
     await waitForServer(secondServer);
-    const secondResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
-    assert.equal(secondResponse.status, 200, "Expected restarted server index to return 200");
-    const secondPayload = await secondResponse.json();
-    assert.equal(secondPayload.stats.totalItems, 6, "Expected restart to rebuild the index from disk instead of serving stale cached metadata");
+    const immediatePayload = await fetchIndexPayload(PORT);
+    assert.equal(
+      [5, 6].includes(immediatePayload.stats.totalItems),
+      true,
+      "Expected restart to return either the cached index immediately or the refreshed index if rebuilding already finished",
+    );
+    if (immediatePayload.stats.totalItems === 5) {
+      assert.equal(
+        immediatePayload.indexStatus?.isRefreshing,
+        true,
+        "Expected cached restart response to advertise background refresh activity",
+      );
+    }
+
+    const secondPayload = await waitForCondition(async () => {
+      const payload = await fetchIndexPayload(PORT);
+      return payload.stats.totalItems === 6 ? payload : null;
+    });
     assert(
       secondPayload.items.some((item) => item.genId === "gen_after_restart"),
       "Expected restart rebuild to include the newly added manifest item",

@@ -13,6 +13,10 @@ function createIndexState({ initialIndex = null, buildIndex }) {
     return state.lastError;
   }
 
+  function isBuilding() {
+    return Boolean(state.buildPromise);
+  }
+
   function setCurrent(index) {
     state.current = index;
     state.lastError = null;
@@ -39,8 +43,8 @@ function createIndexState({ initialIndex = null, buildIndex }) {
   }
 
   async function ensureReady() {
-    if (state.buildPromise) return state.buildPromise;
     if (state.current) return state.current;
+    if (state.buildPromise) return state.buildPromise;
     return startBuild();
   }
 
@@ -48,6 +52,7 @@ function createIndexState({ initialIndex = null, buildIndex }) {
     ensureReady,
     getCurrent,
     getLastError,
+    isBuilding,
     setCurrent,
     startBuild,
   };

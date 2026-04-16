@@ -83,6 +83,11 @@ function releaseGalleryMedia() {
 function renderIndexError(message) {
   state.items = [];
   state.stats = null;
+  state.indexStatus = {
+    isRefreshing: false,
+    isStale: false,
+    refreshError: message,
+  };
   state.pagination = {
     total: 0,
     limit: state.pagination.limit,
@@ -93,6 +98,7 @@ function renderIndexError(message) {
     hasNext: false,
   };
   state.selectedId = null;
+  renderIndexStatus();
   viewer.setSectionLoading(els.detailSection, false);
   els.stats.innerHTML = `
     <article class="summary-card db-card">
@@ -109,6 +115,34 @@ function renderIndexError(message) {
   `;
   els.pagination.innerHTML = "";
   els.detail.innerHTML = "Fix the manifest/index issue and try Rescan again.";
+}
+
+function renderIndexStatus() {
+  const banner = els.indexStatusBanner;
+  if (!banner) return;
+
+  if (state.indexStatus?.isRefreshing) {
+    banner.className = "index-status-banner";
+    banner.innerHTML = `
+      <strong class="index-status-title">Background Update Running</strong>
+      <span class="index-status-text">Showing the previous index until the latest scan finishes.</span>
+    `;
+    banner.classList.remove("hidden");
+    return;
+  }
+
+  if (state.indexStatus?.refreshError) {
+    banner.className = "index-status-banner warn";
+    banner.innerHTML = `
+      <strong class="index-status-title">Background Update Failed</strong>
+      <span class="index-status-text">Showing the last completed index. ${escapeHtml(state.indexStatus.refreshError)}</span>
+    `;
+    banner.classList.remove("hidden");
+    return;
+  }
+
+  banner.className = "index-status-banner hidden";
+  banner.innerHTML = "";
 }
 
 function renderStats() {
@@ -617,6 +651,7 @@ Object.assign(viewer, {
   releaseGalleryMedia,
   renderDetail,
   renderIndexError,
+  renderIndexStatus,
   renderList,
   renderPagination,
   renderStats,

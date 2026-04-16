@@ -250,6 +250,39 @@ button:disabled {
   color: #eef2ff;
 }
 
+.index-status-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 24;
+  display: grid;
+  gap: 4px;
+  margin: 0 0 14px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #111216;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.index-status-banner.warn {
+  border-color: rgba(155, 114, 0, 0.26);
+  background: #fff5d6;
+  color: #2d2300;
+}
+
+.index-status-title {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.index-status-text {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .hidden {
   display: none !important;
 }
@@ -767,6 +800,10 @@ button:disabled {
 
   .toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .index-status-banner {
+    top: 8px;
   }
 
   .gallery-grid {

@@ -69,11 +69,18 @@ Optional environment variables:
 - `SORA_BIND_HOST`: bind host for the HTTP server. Defaults to `127.0.0.1`
 - `SORA_DATA_DIR`: override the data directory location
 - `SORA_VIEWER_ROOT`: override the repository root when `sora2_data/` lives directly under a different parent directory
+- `SORA_ENABLE_SQLITE_CACHE`: defaults to enabled. Set `0` to disable the local SQLite cache
 
 Common examples:
 
 ```powershell
 # default
+npm start
+```
+
+```powershell
+# disable the SQLite cache
+$env:SORA_ENABLE_SQLITE_CACHE = "0"
 npm start
 ```
 

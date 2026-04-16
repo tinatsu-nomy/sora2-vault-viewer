@@ -4,6 +4,12 @@ const viewer = window.SoraViewer = window.SoraViewer || {};
 viewer.state = {
   items: [],
   stats: null,
+  builtAt: null,
+  indexStatus: {
+    isRefreshing: false,
+    isStale: false,
+    refreshError: null,
+  },
   selectedId: null,
   pagination: {
     total: 0,
@@ -42,6 +48,7 @@ viewer.els = {
   clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
+  indexStatusBanner: document.querySelector("#indexStatusBanner"),
   rebuildModal: document.querySelector("#rebuildModal"),
   rebuildModalTitle: document.querySelector("#rebuildModalTitle"),
   rebuildModalMessage: document.querySelector("#rebuildModalMessage"),
@@ -66,9 +73,11 @@ viewer.searchDebounceTimer = null;
 viewer.pageCache = new Map();
 viewer.detailCache = new Map();
 viewer.pagePrefetchInFlight = new Map();
+viewer.refreshPollTimer = null;
 viewer.MAX_PAGE_CACHE_ENTRIES = 18;
 viewer.MAX_DETAIL_CACHE_ENTRIES = 120;
 viewer.MIN_PAGE_BUTTON_LOADING_MS = 180;
+viewer.BACKGROUND_REFRESH_POLL_MS = 1200;
 viewer.SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
 
 viewer.clearSearchDebounce = function clearSearchDebounce() {
@@ -85,7 +94,7 @@ viewer.trimCache = function trimCache(cache, maxEntries) {
 };
 
 viewer.rememberPageCache = function rememberPageCache(key, payload) {
-  if (!key || !payload) return;
+  if (!key || !payload || payload.indexStatus?.isRefreshing) return;
   viewer.pageCache.delete(key);
   viewer.pageCache.set(key, payload);
   viewer.trimCache(viewer.pageCache, viewer.MAX_PAGE_CACHE_ENTRIES);
@@ -102,6 +111,7 @@ viewer.clearDataCaches = function clearDataCaches() {
   viewer.pageCache.clear();
   viewer.detailCache.clear();
   viewer.pagePrefetchInFlight.clear();
+  viewer.clearIndexRefreshPoll();
 };
 
 viewer.delay = function delay(ms) {
@@ -128,6 +138,21 @@ viewer.hidePageLoadingModal = function hidePageLoadingModal() {
   const { els } = viewer;
   els.pageLoadingModal.classList.add("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "true");
+};
+
+viewer.clearIndexRefreshPoll = function clearIndexRefreshPoll() {
+  if (!viewer.refreshPollTimer) return;
+  window.clearTimeout(viewer.refreshPollTimer);
+  viewer.refreshPollTimer = null;
+};
+
+viewer.scheduleIndexRefreshPoll = function scheduleIndexRefreshPoll() {
+  viewer.clearIndexRefreshPoll();
+  if (!viewer.state.indexStatus?.isRefreshing) return;
+  viewer.refreshPollTimer = window.setTimeout(() => {
+    viewer.refreshPollTimer = null;
+    void viewer.fetchIndex({ reason: "background-refresh", useCache: false });
+  }, viewer.BACKGROUND_REFRESH_POLL_MS);
 };
 
 viewer.setSectionLoading = function setSectionLoading(section, isLoading, message = "Loading...") {

@@ -15,7 +15,7 @@ const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
 const SQLITE_SCHEMA_VERSION = "3";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
-const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE === "1";
+const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
 const ROOT = process.env.SORA_VIEWER_ROOT
   ? path.resolve(process.env.SORA_VIEWER_ROOT)
@@ -68,6 +68,27 @@ const indexState = createIndexState({
   },
 });
 
+async function getIndexForRead() {
+  const currentIndex = indexState.getCurrent();
+  if (currentIndex) return currentIndex;
+  return indexState.ensureReady();
+}
+
+function serializeIndexStatus(index) {
+  const currentIndex = indexState.getCurrent();
+  const hasCachedIndex = Boolean(currentIndex);
+  const isRefreshing = Boolean(currentIndex) && currentIndex === index && indexState.isBuilding();
+  const refreshError = hasCachedIndex && !indexState.isBuilding()
+    ? indexState.getLastError()?.message || null
+    : null;
+
+  return {
+    isRefreshing,
+    isStale: isRefreshing,
+    refreshError,
+  };
+}
+
 function isPathInside(parentDir, targetPath) {
   const relative = path.relative(parentDir, targetPath);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -109,10 +130,11 @@ async function handleRequest(request, response) {
     const url = new URL(request.url, `http://${host}`);
 
     if (url.pathname === "/api/index") {
-      const index = await indexState.ensureReady();
+      const index = await getIndexForRead();
       const listing = listingService.listItems(index, url);
       return json(response, 200, {
         builtAt: index.builtAt,
+        indexStatus: serializeIndexStatus(index),
         stats: serializers.serializeStats(index.stats, store.getStatus()),
         items: listing.items,
         pagination: listing.pagination,
@@ -120,7 +142,7 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname.startsWith("/api/item/")) {
-      const index = await indexState.ensureReady();
+      const index = await getIndexForRead();
       const itemId = decodeURIComponent(url.pathname.replace("/api/item/", ""));
       const item = listingService.itemDetails(index, itemId);
       if (!item) return json(response, 404, { error: "Item not found" });
@@ -141,7 +163,7 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/media") {
-      const index = await indexState.ensureReady();
+      const index = await getIndexForRead();
       const itemId = decodeURIComponent(url.searchParams.get("id") || "");
       const kind = url.searchParams.get("kind") || "media";
       const filePath = listingService.localFileForRequest(index, itemId, kind);
@@ -191,7 +213,9 @@ async function handleRequest(request, response) {
 
 async function logIndexSummary() {
   try {
-    const index = await indexState.ensureReady();
+    const index = indexState.isBuilding()
+      ? await indexState.startBuild()
+      : await indexState.ensureReady();
     console.log(`Indexed ${index.stats.totalItems} items`);
     if (index.stats.manifestErrors?.length) {
       console.warn(`Skipped ${index.stats.manifestErrors.length} malformed manifest file(s).`);
