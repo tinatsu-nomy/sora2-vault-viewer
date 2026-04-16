@@ -69,10 +69,66 @@ function formatCameoUsernames(item) {
 }
 
 function sourceLabel(source) {
+  if (!source) return "unknown";
   if (source === "v2_profile") return "profile";
-  if (source === "v2_drafts") return "drafts";
-  if (source === "v2_liked") return "liked";
-  return source || "unknown";
+  if (source === "v2_draft" || source === "v2_drafts") return "draft";
+  return viewer.sourceDirectoryName(source) || source;
+}
+
+function sourceLabelsForItem(item) {
+  const sources = item?.sourceMemberships?.length ? item.sourceMemberships : [item?.source].filter(Boolean);
+  return [...new Set(sources.map((source) => sourceLabel(source)).filter(Boolean))];
+}
+
+function navChips() {
+  return [...(els.topnav?.querySelectorAll(".nav-chip") || [])];
+}
+
+function renderSourceNav() {
+  if (!els.topnav) return;
+
+  const primarySourceButtons = viewer.primarySources()
+    .map((source) => `
+      <button type="button" class="nav-chip" data-source="${escapeHtml(source)}">${escapeHtml(viewer.sourceDisplayName(source))}</button>
+    `)
+    .join("");
+  const customSources = viewer.customSources();
+  const customSourceOptions = customSources
+    .map((source) => `
+      <label class="source-menu-option">
+        <input type="checkbox" class="source-menu-checkbox" data-source="${escapeHtml(source)}" />
+        <span>${escapeHtml(viewer.sourceDisplayName(source))}</span>
+      </label>
+    `)
+    .join("");
+  const customSourceMenu = customSources.length
+    ? `
+      <details class="source-menu" data-role="custom-sources">
+        <summary class="nav-chip source-menu-summary">Users</summary>
+        <div class="source-menu-panel">
+          <div class="source-menu-head">
+            <strong>User sources</strong>
+            <span class="subtle" data-role="custom-source-count"></span>
+          </div>
+          <label class="source-menu-master-toggle">
+            <input type="checkbox" data-role="custom-source-toggle" />
+            <span>Enable all users</span>
+          </label>
+          <div class="source-menu-list">
+            ${customSourceOptions}
+          </div>
+        </div>
+      </details>
+    `
+    : "";
+
+  els.topnav.innerHTML = `
+    <button type="button" class="nav-chip" data-source="all">All</button>
+    ${primarySourceButtons}
+    ${customSourceMenu}
+  `;
+
+  syncNavChips();
 }
 
 function metadataResolutionText(item) {
@@ -91,11 +147,42 @@ function syncNavChips() {
   const selectedSources = new Set(state.filters.sources);
   const allSelected = viewer.SOURCE_ORDER.every((source) => selectedSources.has(source));
 
-  for (const chip of els.navChips) {
+  for (const chip of navChips()) {
     const chipSource = chip.dataset.source;
     const isActive = chipSource === "all" ? allSelected : selectedSources.has(chipSource);
     chip.classList.toggle("active", isActive);
     chip.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }
+
+  const customSources = viewer.customSources();
+  const selectedCustomSources = customSources.filter((source) => selectedSources.has(source));
+  const customSourceMenu = els.topnav?.querySelector('[data-role="custom-sources"]');
+  const customSourceSummary = customSourceMenu?.querySelector(".source-menu-summary");
+  const customSourceCount = customSourceMenu?.querySelector('[data-role="custom-source-count"]');
+  const customSourceToggle = customSourceMenu?.querySelector('[data-role="custom-source-toggle"]');
+
+  for (const checkbox of els.topnav?.querySelectorAll(".source-menu-checkbox") || []) {
+    checkbox.checked = selectedSources.has(checkbox.dataset.source);
+  }
+
+  if (customSourceSummary) {
+    const hasSelection = selectedCustomSources.length > 0;
+    customSourceSummary.classList.toggle("active", hasSelection);
+    customSourceSummary.setAttribute("aria-pressed", hasSelection ? "true" : "false");
+    customSourceSummary.textContent = hasSelection
+      ? `Users (${selectedCustomSources.length})`
+      : `Users (${customSources.length})`;
+  }
+
+  if (customSourceCount) {
+    customSourceCount.textContent = customSources.length
+      ? `${selectedCustomSources.length}/${customSources.length} selected`
+      : "";
+  }
+
+  if (customSourceToggle) {
+    customSourceToggle.checked = customSources.length > 0 && selectedCustomSources.length === customSources.length;
+    customSourceToggle.indeterminate = selectedCustomSources.length > 0 && selectedCustomSources.length < customSources.length;
   }
 }
 
@@ -438,6 +525,9 @@ function renderList() {
       const localMediaUrl = item.mediaUrl || null;
       const posterUsername = formatPosterUsername(item);
       const cameoUsernames = formatCameoUsernames(item);
+      const sourceBadges = sourceLabelsForItem(item)
+        .map((label) => `<span class="badge">${escapeHtml(label)}</span>`)
+        .join("");
       return `
         <article class="gallery-card ${item.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(item.id)}">
           ${createMediaMarkup(item)}
@@ -453,7 +543,7 @@ function renderList() {
           <div class="gallery-overlay">
             <div class="gallery-top">
               <div class="badge-row">
-                <span class="badge">${escapeHtml(sourceLabel(item.source))}</span>
+                ${sourceBadges}
                 ${item.hasLocalMedia ? '<span class="badge good">local play</span>' : '<span class="badge warn">remote only</span>'}
                 ${typeof item.likeCount === "number" ? `<span class="badge">♥ ${escapeHtml(String(item.likeCount))}</span>` : ""}
                 ${typeof item.viewCount === "number" ? `<span class="badge">◉ ${escapeHtml(String(item.viewCount))}</span>` : ""}
@@ -616,6 +706,7 @@ async function renderDetail() {
     .join("");
   const metadataResolution = metadataResolutionText(item);
   const metadataRatio = metadataRatioText(item);
+  const sourceSummary = sourceLabelsForItem(item).join(", ");
   const manifestSupplementRows = [
     item.profileUserId
       ? `<div class="detail-row"><span>profile.user_id</span><strong>${escapeHtml(item.profileUserId)}</strong></div>`
@@ -640,7 +731,7 @@ async function renderDetail() {
     <div class="detail-card">
       <h3>Overview</h3>
       <div class="detail-grid">
-        <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceLabel(item.source))}</strong></div>
+        <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceSummary)}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
         <div class="detail-row"><span>posted by</span><strong>${escapeHtml(posterUsername)}</strong></div>
         ${state.filters.showCameo ? `<div class="detail-row"><span>cameo</span><strong>${escapeHtml(cameoUsernames)}</strong></div>` : ""}
@@ -761,6 +852,7 @@ Object.assign(viewer, {
   renderIndexStatus,
   renderList,
   renderPagination,
+  renderSourceNav,
   renderStats,
   sourceLabel,
   syncNavChips,

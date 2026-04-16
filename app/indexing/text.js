@@ -173,7 +173,8 @@ async function parseTxtRecord(filePath, sourceDirName, txtRecordCache = null) {
 
   const record = {
     type: "localFile",
-    source: metadata.Source || sourceDirName,
+    source: sourceDirName,
+    declaredSource: metadata.Source || null,
     generationId: metadata["Generation ID"] || null,
     taskId: metadata["Task ID"] || null,
     postId: metadata["Post ID"] || null,

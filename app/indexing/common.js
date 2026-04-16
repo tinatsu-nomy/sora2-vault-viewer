@@ -95,12 +95,38 @@ function addLookup(map, key, entryId) {
   map.get(normalized).add(entryId);
 }
 
+function isCustomUserSource(source) {
+  return /^v2_@/i.test(String(source || ""));
+}
+
+function compareSourceKeys(left, right) {
+  if (left === right) return 0;
+  if (left === "v2_profile") return -1;
+  if (right === "v2_profile") return 1;
+  const leftIsCustomUser = isCustomUserSource(left);
+  const rightIsCustomUser = isCustomUserSource(right);
+  if (leftIsCustomUser !== rightIsCustomUser) return leftIsCustomUser ? 1 : -1;
+  return String(left || "").localeCompare(String(right || ""));
+}
+
+function normalizeSourceMemberships(sources) {
+  return [...new Set((sources || []).filter(Boolean))].sort(compareSourceKeys);
+}
+
+function pickPrimarySource(sources) {
+  return normalizeSourceMemberships(sources)[0] || null;
+}
+
 module.exports = {
   addLookup,
   basenameWithoutExt,
+  compareSourceKeys,
   extractIdTokens,
+  isCustomUserSource,
+  normalizeSourceMemberships,
   parseDateValue,
   parseJson,
+  pickPrimarySource,
   slugForText,
   sortableDuration,
 };

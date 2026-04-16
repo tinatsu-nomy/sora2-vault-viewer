@@ -1,4 +1,5 @@
 const { parseJson, slugForText } = require("../indexer");
+const { compareSourceKeys } = require("../indexing/common");
 const { buildFtsMatchQuery, escapeLikePattern, parseListParams } = require("./query");
 
 function createListingService({
@@ -7,6 +8,43 @@ function createListingService({
   serializeListItem,
   serializeListRow,
 }) {
+  function compareSourceMembershipKeys(left, right, activeSourceOrder) {
+    const leftIndex = activeSourceOrder.indexOf(left);
+    const rightIndex = activeSourceOrder.indexOf(right);
+    if (leftIndex >= 0 && rightIndex >= 0 && leftIndex !== rightIndex) return leftIndex - rightIndex;
+    if (leftIndex >= 0 && rightIndex < 0) return -1;
+    if (leftIndex < 0 && rightIndex >= 0) return 1;
+    return compareSourceKeys(left, right);
+  }
+
+  function sourceOrderByClause(activeSourceOrder) {
+    const knownSources = activeSourceOrder.filter(Boolean);
+    if (!knownSources.length) {
+      return "ORDER BY items.source COLLATE NOCASE ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+    }
+
+    const cases = knownSources
+      .map((source, index) => `WHEN '${source.replace(/'/g, "''")}' THEN ${index}`)
+      .join("\n              ");
+
+    return `
+      ORDER BY CASE items.source
+              ${cases}
+              ELSE ${knownSources.length}
+            END ASC,
+            COALESCE(items.date_sort_ms, -9223372036854775808) ASC,
+            items.id ASC
+    `;
+  }
+
+  function sourceMembershipPattern(source) {
+    return `%\"${escapeLikePattern(source)}\"%`;
+  }
+
+  function itemSourceMemberships(item) {
+    return item?.sourceMemberships?.length ? item.sourceMemberships : [item?.source].filter(Boolean);
+  }
+
   function usernamePrefixLikePattern(prefix) {
     return `${escapeLikePattern(prefix)}%`;
   }
@@ -35,7 +73,7 @@ function createListingService({
     });
   }
 
-  function listItemsFromDb(params) {
+  function listItemsFromDb(params, activeSourceOrder) {
     const joins = [];
     const where = [];
     const values = [];
@@ -80,11 +118,13 @@ function createListingService({
           },
         };
       }
-      where.push(`items.source IN (${params.sources.map(() => "?").join(", ")})`);
-      values.push(...params.sources);
+      where.push(`(${params.sources.map(() => "items.source = ? OR items.source_memberships_json LIKE ? ESCAPE '\\'").join(" OR ")})`);
+      for (const source of params.sources) {
+        values.push(source, sourceMembershipPattern(source));
+      }
     } else if (params.source && params.source !== "all") {
-      where.push("items.source = ?");
-      values.push(params.source);
+      where.push("(items.source = ? OR items.source_memberships_json LIKE ? ESCAPE '\\')");
+      values.push(params.source, sourceMembershipPattern(params.source));
     }
 
     if (params.localOnly) where.push("(items.has_local_media = 1 OR items.has_local_text = 1)");
@@ -121,16 +161,7 @@ function createListingService({
         case "duration-desc":
           return "ORDER BY COALESCE(items.duration_sort, 0) DESC, items.id DESC";
         case "source-asc":
-          return `
-            ORDER BY CASE items.source
-              WHEN 'v2_profile' THEN 0
-              WHEN 'v2_liked' THEN 1
-              WHEN 'v2_drafts' THEN 2
-              ELSE 9
-            END ASC,
-            COALESCE(items.date_sort_ms, -9223372036854775808) ASC,
-            items.id ASC
-          `;
+          return sourceOrderByClause(activeSourceOrder);
         case "date-desc":
         default:
           return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
@@ -155,7 +186,10 @@ function createListingService({
 
   function listItems(index, url) {
     const params = parseListParams(url);
-    const dbListing = listItemsFromDb(params);
+    const activeSourceOrder = Array.isArray(index?.stats?.sourceOrder) && index.stats.sourceOrder.length
+      ? index.stats.sourceOrder
+      : sourceOrder;
+    const dbListing = listItemsFromDb(params, activeSourceOrder);
     if (dbListing) return dbListing;
 
     let filtered = index.items;
@@ -165,9 +199,9 @@ function createListingService({
     }
     if (params.hasSourcesParam) {
       const allowedSources = new Set(params.sources);
-      filtered = filtered.filter((item) => allowedSources.has(item.source));
+      filtered = filtered.filter((item) => itemSourceMemberships(item).some((source) => allowedSources.has(source)));
     } else if (params.source && params.source !== "all") {
-      filtered = filtered.filter((item) => item.source === params.source);
+      filtered = filtered.filter((item) => itemSourceMemberships(item).includes(params.source));
     }
     if (params.localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
     if (params.withText) filtered = filtered.filter((item) => item.hasLocalText);
@@ -203,7 +237,7 @@ function createListingService({
         case "duration-desc":
           return Number(right.duration || 0) - Number(left.duration || 0);
         case "source-asc": {
-          const sourceIndex = sourceOrder.indexOf(left.source) - sourceOrder.indexOf(right.source);
+          const sourceIndex = compareSourceMembershipKeys(left.source, right.source, activeSourceOrder);
           if (sourceIndex !== 0) return sourceIndex;
           return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
         }

@@ -3,7 +3,11 @@ const path = require("path");
 
 const {
   basenameWithoutExt,
+  compareSourceKeys,
   extractIdTokens,
+  isCustomUserSource,
+  normalizeSourceMemberships,
+  pickPrimarySource,
   slugForText,
 } = require("./common");
 const { parseTxtRecord } = require("./text");
@@ -42,11 +46,13 @@ async function walkFiles(dirPath) {
 function localAttachmentForGroup(group, localRecord) {
   return {
     mediaPath: group.mediaPath || null,
+    source: group.source || localRecord.source || null,
     txtPath: group.txtPath || null,
     txtEncoding: localRecord.encoding,
     txtRaw: localRecord.rawText,
     txtPrompt: localRecord.prompt,
     parsed: {
+      declaredSource: localRecord.declaredSource || null,
       generationId: localRecord.generationId,
       taskId: localRecord.taskId,
       postId: localRecord.postId,
@@ -59,8 +65,73 @@ function localAttachmentForGroup(group, localRecord) {
   };
 }
 
+function sourceMembershipsForEntry(entry) {
+  return normalizeSourceMemberships(entry?.sourceMemberships || [entry?.source].filter(Boolean));
+}
+
+function applySourceMembership(entry, source) {
+  const sourceMemberships = normalizeSourceMemberships([
+    ...sourceMembershipsForEntry(entry),
+    source,
+  ]);
+  entry.sourceMemberships = sourceMemberships;
+  entry.source = pickPrimarySource(sourceMemberships) || entry.source || source;
+}
+
+function localAttachmentPriority(leftAttachment, rightAttachment) {
+  return compareSourceKeys(leftAttachment?.source || "", rightAttachment?.source || "");
+}
+
+function attachLocalVariant(entry, source, attachment) {
+  applySourceMembership(entry, source);
+  if (!entry.localVariants) entry.localVariants = {};
+  entry.localVariants[source] = attachment;
+  if (!entry.local || localAttachmentPriority(attachment, entry.local) < 0) {
+    entry.local = attachment;
+  }
+}
+
+function normalizeUsername(value) {
+  if (!value) return "";
+  return String(value).trim().replace(/^@+/, "").toLowerCase();
+}
+
+function sourceUsername(source) {
+  if (!source || !isCustomUserSource(source)) return "";
+  return normalizeUsername(source.slice(3));
+}
+
+function usernamesForEntry(entry) {
+  return new Set(
+    [
+      entry?.posterUsername,
+      entry?.ownerUsername,
+      ...(entry?.ownerUsernames || []),
+      ...(entry?.cameoOwnerUsernames || []),
+    ]
+      .map((value) => normalizeUsername(value))
+      .filter(Boolean),
+  );
+}
+
+function sourceMatchesEntry(entry, localRecord) {
+  const entryManifestSources = normalizeSourceMemberships(entry?.manifestSources || [entry?.manifestSource].filter(Boolean));
+  const localDeclaredSource = localRecord?.declaredSource || null;
+  const localSource = localRecord?.source || null;
+
+  if (!entryManifestSources.length) return false;
+  if (localDeclaredSource && entryManifestSources.includes(localDeclaredSource)) return true;
+  if (entryManifestSources.includes(localSource)) return true;
+
+  const customUsername = sourceUsername(localSource);
+  if (!customUsername) return false;
+  if (!entryManifestSources.includes("v2_user") && localDeclaredSource !== "v2_user") return false;
+
+  return usernamesForEntry(entry).has(customUsername);
+}
+
 function scoreLocalMatch(entry, localRecord) {
-  if (!entry || entry.source !== localRecord.source) return -1;
+  if (!entry || !sourceMatchesEntry(entry, localRecord)) return -1;
 
   const entryLookupValues = new Set(
     [
@@ -107,8 +178,41 @@ function scoreLocalMatch(entry, localRecord) {
   return score;
 }
 
+function applyCustomSourceAliases(entries, sourceDirs) {
+  const sourceByUsername = new Map();
+
+  for (const source of Object.keys(sourceDirs)) {
+    const username = sourceUsername(source);
+    if (!username) continue;
+    if (sourceByUsername.has(username)) {
+      sourceByUsername.set(username, null);
+      continue;
+    }
+    sourceByUsername.set(username, source);
+  }
+
+  for (const entry of entries.values()) {
+    const manifestSources = normalizeSourceMemberships(entry.manifestSources || [entry.manifestSource].filter(Boolean));
+    if (!manifestSources.includes("v2_user")) continue;
+    if (sourceMembershipsForEntry(entry).some((source) => sourceUsername(source))) continue;
+
+    const candidates = [
+      normalizeUsername(entry.posterUsername),
+      normalizeUsername(entry.ownerUsername),
+      ...[...(entry.ownerUsernames || []), ...(entry.cameoOwnerUsernames || [])].map((value) => normalizeUsername(value)),
+    ].filter(Boolean);
+
+    for (const username of candidates) {
+      const mappedSource = sourceByUsername.get(username);
+      if (!mappedSource) continue;
+      applySourceMembership(entry, mappedSource);
+      break;
+    }
+  }
+}
+
 async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null } = {}) {
-  const unmatchedLocals = [];
+  const unmatchedLocals = new Map();
 
   for (const [source, dirPath] of Object.entries(sourceDirs)) {
     const grouped = new Map();
@@ -130,6 +234,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
         : {
             type: "localFile",
             source,
+            declaredSource: null,
             generationId: null,
             taskId: null,
             postId: null,
@@ -181,12 +286,34 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
       }
 
       if (matchedEntry && !matchedTie) {
-        matchedEntry.local = localAttachmentForGroup(group, localRecord);
+        attachLocalVariant(matchedEntry, source, localAttachmentForGroup(group, localRecord));
       } else {
-        unmatchedLocals.push({
-          id: `local:${source}:${localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem}`,
+        const unmatchedKey = localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem;
+        const unmatchedId = `local:${unmatchedKey}`;
+        const existingEntry = unmatchedLocals.get(unmatchedId);
+        if (existingEntry) {
+          attachLocalVariant(existingEntry, source, localAttachmentForGroup(group, localRecord));
+          existingEntry.date = existingEntry.date || localRecord.date;
+          existingEntry.prompt = existingEntry.prompt || localRecord.prompt;
+          existingEntry.ratio = existingEntry.ratio || localRecord.aspectRatio || null;
+          existingEntry.duration = existingEntry.duration || localRecord.duration || null;
+          existingEntry.isLiked = Boolean(existingEntry.isLiked || localRecord.liked === "yes");
+          existingEntry.idTokens = [...new Set([...(existingEntry.idTokens || []), ...(localRecord.idTokens || [])])];
+          existingEntry.manifestSources = normalizeSourceMemberships([
+            ...(existingEntry.manifestSources || []),
+            localRecord.declaredSource || null,
+          ]);
+          existingEntry.manifestSource = pickPrimarySource(existingEntry.manifestSources) || existingEntry.manifestSource || null;
+          continue;
+        }
+
+        const unmatchedEntry = {
+          id: unmatchedId,
           kind: "local-only",
           source,
+          sourceMemberships: [source],
+          manifestSource: localRecord.declaredSource || null,
+          manifestSources: normalizeSourceMemberships([localRecord.declaredSource || null]),
           date: localRecord.date,
           prompt: localRecord.prompt,
           manifestExportedAt: null,
@@ -205,15 +332,19 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
           downloadUrl: null,
           thumbUrl: null,
           idTokens: localRecord.idTokens,
-          local: localAttachmentForGroup(group, localRecord),
-        });
+          local: null,
+        };
+        attachLocalVariant(unmatchedEntry, source, localAttachmentForGroup(group, localRecord));
+        unmatchedLocals.set(unmatchedId, unmatchedEntry);
       }
     }
   }
 
-  for (const entry of unmatchedLocals) {
+  for (const entry of unmatchedLocals.values()) {
     entries.set(entry.id, entry);
   }
+
+  applyCustomSourceAliases(entries, sourceDirs);
 }
 
 module.exports = {

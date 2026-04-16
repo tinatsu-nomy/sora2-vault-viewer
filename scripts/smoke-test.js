@@ -9,6 +9,8 @@ fs.mkdirSync(TMP_PARENT, { recursive: true });
 const TMP_ROOT = fs.mkdtempSync(path.join(TMP_PARENT, "sora2-viewer-smoke-"));
 const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
+const LIKED_DIR = path.join(DATA_DIR, "sora_v2_liked");
+const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
 const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
 const PORT = 33210;
 const RETRY_PORT = 33230;
@@ -30,11 +32,13 @@ function loadStartServer({ dbPath } = {}) {
 
 function writeFixtureData() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  fs.mkdirSync(LIKED_DIR, { recursive: true });
+  fs.mkdirSync(USER_DIR, { recursive: true });
 
   const manifest = {
     exported_at: "2026-04-15T00:00:00Z",
-    total: 5,
-    scan_sources: ["v2_profile"],
+    total: 7,
+    scan_sources: ["v2_profile", "v2_liked", "v2_user"],
     items: [
       {
         source: "v2_profile",
@@ -49,7 +53,32 @@ function writeFixtureData() {
         duration: 5,
         isLiked: true,
         _raw: {
-          profile: { username: "smoke_user" },
+          profile: { username: "smoke_user", user_id: "user-smoke" },
+          post: {
+            id: "s_smoke123",
+            text: "Smoke test prompt",
+            caption: "Manifest only caption",
+            like_count: 7,
+            view_count: 42,
+            attachments: [{ generation_id: "gen_smoke123" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_liked",
+        genId: "gen_smoke123",
+        taskId: "task_shared",
+        postId: "s_smoke123",
+        date: "2026-04-15",
+        prompt: "Smoke test prompt",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 5,
+        isLiked: true,
+        _raw: {
+          profile: { username: "smoke_user", user_id: "user-smoke" },
           post: {
             id: "s_smoke123",
             text: "Smoke test prompt",
@@ -81,6 +110,54 @@ function writeFixtureData() {
             like_count: 1,
             view_count: 3,
             attachments: [{ generation_id: "gen_other999" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_liked",
+        genId: "gen_user999",
+        taskId: "task_user999",
+        postId: "s_user999",
+        date: "2026-04-10",
+        prompt: "Bucket user shared item",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 7,
+        isLiked: true,
+        _raw: {
+          profile: { username: "bucket_user", user_id: "user-bucket" },
+          post: {
+            id: "s_user999",
+            text: "Bucket user shared item",
+            like_count: 5,
+            view_count: 9,
+            attachments: [{ generation_id: "gen_user999" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_user",
+        genId: "gen_user999",
+        taskId: "task_user999",
+        postId: "s_user999",
+        date: "2026-04-10",
+        prompt: "Bucket user shared item",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 7,
+        isLiked: false,
+        _raw: {
+          profile: { username: "bucket_user", user_id: "user-bucket" },
+          post: {
+            id: "s_user999",
+            text: "Bucket user shared item",
+            like_count: 5,
+            view_count: 9,
+            attachments: [{ generation_id: "gen_user999" }],
             cameo_profiles: [],
           },
         },
@@ -148,6 +225,28 @@ function writeFixtureData() {
       "Liked: yes",
       "Prompt",
       "Smoke test prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(USER_DIR, "2026-04-10_gen_user999.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(USER_DIR, "2026-04-10_gen_user999.txt"),
+    [
+      "Source: v2_user",
+      "Generation ID: gen_user999",
+      "Task ID: task_user999",
+      "Post ID: s_user999",
+      "Date: 2026-04-10",
+      "Duration: 7",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Bucket user shared item",
     ].join("\n"),
     "utf8",
   );
@@ -279,7 +378,7 @@ async function assertRestartRefreshesCachedIndex() {
   try {
     await waitForServer(firstServer);
     const firstPayload = await fetchIndexPayload(PORT);
-    assert.equal(firstPayload.stats.totalItems, 5, "Expected initial startup to index the fixture manifest");
+    assert.equal(firstPayload.stats.totalItems, 6, "Expected initial startup to index the fixture manifest");
   } finally {
     await new Promise((resolve) => firstServer.close(resolve));
   }
@@ -292,11 +391,11 @@ async function assertRestartRefreshesCachedIndex() {
     await waitForServer(secondServer);
     const immediatePayload = await fetchIndexPayload(PORT);
     assert.equal(
-      [5, 6].includes(immediatePayload.stats.totalItems),
+      [6, 7].includes(immediatePayload.stats.totalItems),
       true,
       "Expected restart to return either the cached index immediately or the refreshed index if rebuilding already finished",
     );
-    if (immediatePayload.stats.totalItems === 5) {
+    if (immediatePayload.stats.totalItems === 6) {
       assert.equal(
         immediatePayload.indexStatus?.isRefreshing,
         true,
@@ -306,7 +405,7 @@ async function assertRestartRefreshesCachedIndex() {
 
     const secondPayload = await waitForCondition(async () => {
       const payload = await fetchIndexPayload(PORT);
-      return payload.stats.totalItems === 6 ? payload : null;
+      return payload.stats.totalItems === 7 ? payload : null;
     });
     assert(
       secondPayload.items.some((item) => item.genId === "gen_after_restart"),
@@ -328,18 +427,23 @@ async function run() {
     await waitForServer(server);
 
     const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
-    assert.equal(indexPayload.items.length, 6, "Expected all manifest items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 6, "Expected stats to report all indexed items");
-    assert.equal(indexPayload.stats.withLocalMedia, 1, "Expected only one item to match the local media pair");
+    assert.equal(indexPayload.items.length, 7, "Expected all manifest items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 7, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.stats.withLocalMedia, 2, "Expected two merged items to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
     const mainItem = indexPayload.items.find((item) => item.genId === "gen_smoke123");
     assert(mainItem, "Expected the primary fixture item to be present");
-    assert.equal(mainItem.mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
+    assert.equal(mainItem.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(mainItem.posterUsername, "smoke_user");
+    assert.deepEqual(mainItem.sourceMemberships, ["v2_profile", "v2_liked"]);
     assert.equal(mainItem.localMediaPath, undefined);
     const ambiguousItem = indexPayload.items.find((item) => item.genId === "gen_other999");
     assert(ambiguousItem, "Expected the ambiguous task fixture item to be present");
     assert.equal(ambiguousItem.hasLocalMedia, false, "Expected shared task IDs not to attach the wrong local media");
+    const sharedUserItem = indexPayload.items.find((item) => item.genId === "gen_user999");
+    assert(sharedUserItem, "Expected the liked/user shared fixture item to be present");
+    assert.deepEqual(sharedUserItem.sourceMemberships, ["v2_liked", "v2_@bucket_user"]);
+    assert.equal(sharedUserItem.hasLocalMedia, true, "Expected the custom user directory to attach local media");
     const fallbackItems = indexPayload.items.filter((item) => item.prompt.startsWith("Fallback manifest"));
     assert.equal(fallbackItems.length, 2, "Expected identifier-less manifest items not to overwrite each other");
     for (const item of fallbackItems) {
@@ -371,6 +475,33 @@ async function run() {
     assert.equal(literalAtSearchPayload.items.length, 1, "Expected spaced @ query to use simple text search");
     assert.equal(literalAtSearchPayload.items[0].prompt, "Literal @smoke marker");
 
+    const profileFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_profile`,
+      "Expected profile filter search to return 200",
+    );
+    assert.equal(profileFilterPayload.items.some((item) => item.genId === "gen_smoke123"), true, "Expected shared profile/liked item to appear in profile filter");
+    assert.equal(profileFilterPayload.items.some((item) => item.genId === "gen_user999"), false, "Expected liked/user item not to appear in profile filter");
+
+    const likedFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_liked`,
+      "Expected liked filter search to return 200",
+    );
+    assert.equal(likedFilterPayload.items.some((item) => item.genId === "gen_smoke123"), true, "Expected shared profile/liked item to appear in liked filter");
+    assert.equal(likedFilterPayload.items.some((item) => item.genId === "gen_user999"), true, "Expected shared liked/user item to appear in liked filter");
+
+    const userFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_@bucket_user")}`,
+      "Expected custom user filter search to return 200",
+    );
+    assert.equal(userFilterPayload.items.length, 1, "Expected only the shared liked/user item to appear in custom user filter");
+    assert.equal(userFilterPayload.items[0].genId, "gen_user999");
+
+    const mergedFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_profile,v2_liked`,
+      "Expected merged source filter search to return 200",
+    );
+    assert.equal(mergedFilterPayload.items.filter((item) => item.genId === "gen_smoke123").length, 1, "Expected shared items to stay deduped across multiple selected filters");
+
     const fallbackSearchPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`,
       "Expected fallback prompt search to return 200",
@@ -393,7 +524,7 @@ async function run() {
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(mainItem.id)}`,
       "Expected /api/item to return 200",
     );
-    assert.equal(detailPayload.mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
+    assert.equal(detailPayload.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
     assert.equal(detailPayload.local.txtRaw.includes("Smoke test prompt"), true);
     assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");

@@ -9,7 +9,12 @@ async function listManifestFiles(dataDir) {
   try {
     const entries = await fsp.readdir(dataDir, { withFileTypes: true });
     return entries
-      .filter((entry) => entry.isFile() && /^soravault_manifest_.*\.json$/i.test(entry.name))
+      .filter((entry) => {
+        if (!entry.isFile()) return false;
+        const ext = path.extname(entry.name).toLowerCase();
+        if (ext !== ".json") return false;
+        return entry.name.toLowerCase().startsWith("soravault_manifest_");
+      })
       .map((entry) => path.join(dataDir, entry.name))
       .sort();
   } catch (error) {
@@ -39,7 +44,7 @@ function manifestIdentity(item) {
 function manifestDedupeKeyFromItem(item) {
   const identity = manifestIdentity(item);
   if (!identity.preferredId) return null;
-  return `${identity.source}:${identity.preferredId}`;
+  return identity.preferredId;
 }
 
 function pushSearchValue(values, value) {
@@ -133,9 +138,12 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   const manifestStem = path.basename(manifestPath, path.extname(manifestPath));
 
   return {
-    id: preferredId ? `${source}:${preferredId}` : `${source}:manifest:${manifestStem}:${itemIndex}`,
+    id: preferredId ? preferredId : `manifest:${manifestStem}:${itemIndex}`,
     kind: "manifest",
     source,
+    manifestSource: source,
+    sourceMemberships: source === "v2_user" ? [] : [source],
+    manifestSources: [source],
     date: item.date || null,
     prompt: item.prompt || item?._raw?.post?.text || item?._raw?.prompt || "",
     manifestExportedAt: exportedAt,

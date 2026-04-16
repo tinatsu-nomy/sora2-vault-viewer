@@ -4,6 +4,7 @@ const http = require("http");
 const { URL } = require("url");
 
 const { buildIndex } = require("./indexer");
+const { compareSourceKeys } = require("./indexing/common");
 const { createStore } = require("./store");
 const { createSerializers } = require("./http/serializers");
 const { createListingService } = require("./search/listing");
@@ -13,7 +14,7 @@ const fsp = fs.promises;
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "4";
+const SQLITE_SCHEMA_VERSION = "5";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
@@ -33,13 +34,24 @@ const CONFIG_PATH = process.env.SORA_CONFIG_PATH
   ? path.resolve(process.env.SORA_CONFIG_PATH)
   : null;
 
-const SOURCE_DIRS = {
-  v2_drafts: path.join(DATA_DIR, "sora_v2_drafts"),
-  v2_liked: path.join(DATA_DIR, "sora_v2_liked"),
-  v2_profile: path.join(DATA_DIR, "sora_v2_profile"),
-};
+async function discoverSourceDirs(dataDir) {
+  let entries = [];
+  try {
+    entries = await fsp.readdir(dataDir, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
 
-const SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
+  const sourceDirs = {};
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!/^sora_v2_.+/i.test(entry.name)) continue;
+    const sourceKey = entry.name.replace(/^sora_/i, "");
+    sourceDirs[sourceKey] = path.join(dataDir, entry.name);
+  }
+
+  return sourceDirs;
+}
 
 const store = createStore({
   enabled: ENABLE_SQLITE_CACHE,
@@ -62,7 +74,7 @@ const serializers = createSerializers({
 });
 
 const listingService = createListingService({
-  sourceOrder: SOURCE_ORDER,
+  sourceOrder: [],
   store,
   serializeListItem: serializers.serializeListItem,
   serializeListRow: serializers.serializeListRow,
@@ -71,11 +83,13 @@ const listingService = createListingService({
 const indexState = createIndexState({
   initialIndex: store.loadIndexMeta(),
   buildIndex: async () => {
+    const sourceDirs = await discoverSourceDirs(DATA_DIR);
     const builtIndex = await buildIndex({
       dataDir: DATA_DIR,
-      sourceDirs: SOURCE_DIRS,
+      sourceDirs,
       databaseStatus: store.getStatus(),
       txtCachePath: TXT_CACHE_PATH,
+      sourceOrder: Object.keys(sourceDirs).sort(compareSourceKeys),
     });
     store.persistIndex(builtIndex);
     builtIndex.stats.database = store.getStatus();

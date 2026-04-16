@@ -110,9 +110,33 @@ async function initViewerApp() {
       }
       state.filters.sources = state.filters.sources.filter((item) => item !== source);
     } else {
-      state.filters.sources = [...state.filters.sources, source].sort(
-        (left, right) => viewer.SOURCE_ORDER.indexOf(left) - viewer.SOURCE_ORDER.indexOf(right),
-      );
+      state.filters.sources = [...state.filters.sources, source].sort(viewer.compareSources);
+    }
+
+    viewer.syncNavChips();
+    resetPagination();
+    viewer.clearDataCaches();
+    void refresh();
+  }
+
+  function applyCustomSourceToggle(enabled) {
+    const customSources = viewer.customSources();
+    if (!customSources.length) {
+      viewer.syncNavChips();
+      return;
+    }
+
+    if (enabled) {
+      state.filters.sources = [...new Set([
+        ...state.filters.sources,
+        ...customSources,
+      ])].sort(viewer.compareSources);
+    } else {
+      state.filters.sources = state.filters.sources.filter((source) => !customSources.includes(source));
+      if (!state.filters.sources.length) {
+        const primarySources = viewer.primarySources();
+        state.filters.sources = primarySources.length ? [...primarySources] : [];
+      }
     }
 
     viewer.syncNavChips();
@@ -142,6 +166,7 @@ async function initViewerApp() {
   }
 
   Object.assign(viewer, {
+    applyCustomSourceToggle,
     applySourceFilter,
     hideRebuildModal,
     refresh,
@@ -221,11 +246,23 @@ async function initViewerApp() {
     await clearDateFilters();
   });
 
-  for (const chip of els.navChips) {
-    chip.addEventListener("click", () => {
-      applySourceFilter(chip.dataset.source);
-    });
-  }
+  els.topnav.addEventListener("click", (event) => {
+    const chip = event.target.closest(".nav-chip");
+    if (!chip) return;
+    if (chip.classList.contains("source-menu-summary")) return;
+    applySourceFilter(chip.dataset.source);
+  });
+
+  els.topnav.addEventListener("change", (event) => {
+    const customToggle = event.target.closest('[data-role="custom-source-toggle"]');
+    if (customToggle) {
+      applyCustomSourceToggle(customToggle.checked);
+      return;
+    }
+    const checkbox = event.target.closest(".source-menu-checkbox");
+    if (!checkbox) return;
+    applySourceFilter(checkbox.dataset.source);
+  });
 
   for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
     checkbox.addEventListener("change", async () => {
@@ -284,6 +321,7 @@ async function initViewerApp() {
   });
 
   updateDateResetButton();
+  viewer.renderSourceNav();
   viewer.syncNavChips();
   void refresh();
 }

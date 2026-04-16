@@ -48,6 +48,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         CREATE TABLE IF NOT EXISTS items (
           id TEXT PRIMARY KEY,
           source TEXT,
+          source_memberships_json TEXT NOT NULL,
           kind TEXT,
           date TEXT,
           date_sort_ms INTEGER,
@@ -120,13 +121,13 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     try {
       const insert = database.prepare(`
         INSERT OR REPLACE INTO items (
-          id, source, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
+          id, source, source_memberships_json, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
           poster_username, owner_usernames_json, cameo_owner_usernames_json,
           duration, duration_sort, ratio, width, height, like_count, view_count,
           is_liked, has_local_media, has_local_text, thumb_url, preview_url, download_url,
           local_media_path, local_txt_path, search_text, detail_json
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?,
@@ -150,6 +151,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         insert.run(
           item.id,
           item.source,
+          JSON.stringify(item.sourceMemberships || [item.source].filter(Boolean)),
           item.kind,
           item.date,
           item.dateSortMs,
@@ -252,6 +254,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         items.id,
         items.kind,
         items.source,
+        items.source_memberships_json AS sourceMembershipsJson,
         items.date,
         items.prompt,
         items.gen_id AS genId,

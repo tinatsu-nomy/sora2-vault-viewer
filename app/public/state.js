@@ -23,7 +23,7 @@ viewer.state = {
   pendingPageAction: null,
   filters: {
     query: "",
-    sources: ["v2_profile", "v2_liked", "v2_drafts"],
+    sources: [],
     sort: "date-desc",
     dateFrom: "",
     dateTo: "",
@@ -48,6 +48,7 @@ viewer.els = {
   clearQueryButton: document.querySelector("#clearQueryButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
+  topnav: document.querySelector(".topnav"),
   indexStatusBanner: document.querySelector("#indexStatusBanner"),
   rebuildModal: document.querySelector("#rebuildModal"),
   rebuildModalTitle: document.querySelector("#rebuildModalTitle"),
@@ -63,7 +64,6 @@ viewer.els = {
   stats: document.querySelector("#stats"),
   resultMeta: document.querySelector("#resultMeta"),
   pagination: document.querySelector("#pagination"),
-  navChips: [...document.querySelectorAll(".nav-chip")],
 };
 
 viewer.mediaObserver = null;
@@ -78,7 +78,70 @@ viewer.MAX_PAGE_CACHE_ENTRIES = 18;
 viewer.MAX_DETAIL_CACHE_ENTRIES = 120;
 viewer.MIN_PAGE_BUTTON_LOADING_MS = 180;
 viewer.BACKGROUND_REFRESH_POLL_MS = 1200;
-viewer.SOURCE_ORDER = ["v2_profile", "v2_liked", "v2_drafts"];
+viewer.SOURCE_ORDER = [];
+
+viewer.sourceDirectoryName = function sourceDirectoryName(source) {
+  if (!source) return "";
+  return source;
+};
+
+viewer.isCustomUserSource = function isCustomUserSource(source) {
+  return /^v2_@/i.test(source || "");
+};
+
+viewer.primarySources = function primarySources(sources = viewer.SOURCE_ORDER) {
+  return (sources || []).filter((source) => !viewer.isCustomUserSource(source));
+};
+
+viewer.customSources = function customSources(sources = viewer.SOURCE_ORDER) {
+  return (sources || []).filter((source) => viewer.isCustomUserSource(source));
+};
+
+viewer.compareSources = function compareSources(left, right) {
+  if (left === right) return 0;
+  if (left === "v2_profile") return -1;
+  if (right === "v2_profile") return 1;
+  const leftIsCustomUser = viewer.isCustomUserSource(left);
+  const rightIsCustomUser = viewer.isCustomUserSource(right);
+  if (leftIsCustomUser !== rightIsCustomUser) return leftIsCustomUser ? 1 : -1;
+  return viewer.sourceDirectoryName(left).localeCompare(viewer.sourceDirectoryName(right), "ja");
+};
+
+viewer.normalizeSources = function normalizeSources(sources) {
+  return [...new Set((sources || []).filter(Boolean))].sort(viewer.compareSources);
+};
+
+viewer.sourceDisplayName = function sourceDisplayName(source) {
+  if (source === "v2_profile") return "Profile";
+  if (source === "v2_draft" || source === "v2_drafts") return "draft";
+  if (typeof source === "string" && source.startsWith("v2_")) {
+    return source.slice(3);
+  }
+  return viewer.sourceDirectoryName(source);
+};
+
+viewer.setAvailableSources = function setAvailableSources(sources) {
+  const nextSources = viewer.normalizeSources(sources);
+  const previousSources = viewer.SOURCE_ORDER;
+  const hadAllSourcesSelected =
+    previousSources.length > 0
+    && previousSources.every((source) => viewer.state.filters.sources.includes(source));
+
+  viewer.SOURCE_ORDER = nextSources;
+
+  if (!nextSources.length) {
+    viewer.state.filters.sources = [];
+    return;
+  }
+
+  if (!viewer.state.filters.sources.length || hadAllSourcesSelected) {
+    viewer.state.filters.sources = [...nextSources];
+    return;
+  }
+
+  const nextSelectedSources = viewer.state.filters.sources.filter((source) => nextSources.includes(source));
+  viewer.state.filters.sources = nextSelectedSources.length ? nextSelectedSources : [...nextSources];
+};
 
 viewer.clearSearchDebounce = function clearSearchDebounce() {
   if (!viewer.searchDebounceTimer) return;

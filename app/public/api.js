@@ -37,6 +37,7 @@ function currentPageQueryString() {
 }
 
 function applyIndexPayload(payload) {
+  viewer.setAvailableSources(payload.stats?.sourceOrder || payload.stats?.sources || []);
   state.builtAt = payload.builtAt || null;
   state.indexStatus = payload.indexStatus || {
     isRefreshing: false,
@@ -54,6 +55,7 @@ function applyIndexPayload(payload) {
     hasPrevious: false,
     hasNext: false,
   };
+  viewer.renderSourceNav();
   viewer.renderIndexStatus();
   viewer.renderStats();
   viewer.renderList();
