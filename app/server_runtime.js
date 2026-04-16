@@ -13,7 +13,7 @@ const fsp = fs.promises;
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "3";
+const SQLITE_SCHEMA_VERSION = "4";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
@@ -24,8 +24,11 @@ const DATA_DIR = process.env.SORA_DATA_DIR
   ? path.resolve(process.env.SORA_DATA_DIR)
   : path.join(ROOT, "sora2_data");
 const PUBLIC_DIR = path.join(ROOT, "app", "public");
-const APP_DATA_DIR = path.join(ROOT, "app", "data");
+const APP_DATA_DIR = process.env.SORA_APP_DATA_DIR
+  ? path.resolve(process.env.SORA_APP_DATA_DIR)
+  : path.join(ROOT, "app", "data");
 const DB_PATH = process.env.SORA_SQLITE_PATH || path.join(APP_DATA_DIR, "sora-index.sqlite");
+const TXT_CACHE_PATH = path.join(APP_DATA_DIR, "txt-record-cache.json");
 
 const SOURCE_DIRS = {
   v2_drafts: path.join(DATA_DIR, "sora_v2_drafts"),
@@ -61,6 +64,7 @@ const indexState = createIndexState({
       dataDir: DATA_DIR,
       sourceDirs: SOURCE_DIRS,
       databaseStatus: store.getStatus(),
+      txtCachePath: TXT_CACHE_PATH,
     });
     store.persistIndex(builtIndex);
     builtIndex.stats.database = store.getStatus();

@@ -9,6 +9,7 @@ fs.mkdirSync(TMP_PARENT, { recursive: true });
 const TMP_ROOT = fs.mkdtempSync(path.join(TMP_PARENT, "sora2-viewer-smoke-"));
 const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
+const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
 const PORT = 33210;
 const RETRY_PORT = 33230;
 
@@ -16,6 +17,7 @@ process.env.PORT = String(PORT);
 process.env.SORA_DATA_DIR = DATA_DIR;
 process.env.SORA_ENABLE_SQLITE_CACHE = "1";
 process.env.SORA_BIND_HOST = "127.0.0.1";
+process.env.SORA_APP_DATA_DIR = APP_DATA_DIR;
 
 function loadStartServer({ dbPath } = {}) {
   process.env.SORA_SQLITE_PATH = dbPath;
@@ -365,6 +367,7 @@ async function run() {
     assert.equal(detailPayload.mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
     assert.equal(detailPayload.local.txtRaw.includes("Smoke test prompt"), true);
+    assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
 
     const ambiguousDetailResponse = await fetch(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(ambiguousItem.id)}`,

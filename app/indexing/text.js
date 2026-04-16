@@ -1,4 +1,5 @@
 const fs = require("fs");
+const path = require("path");
 
 const {
   basenameWithoutExt,
@@ -11,6 +12,105 @@ const TEXT_DECODERS = [
   { name: "utf-8", decoder: new TextDecoder("utf-8", { fatal: false }) },
   { name: "shift_jis", decoder: new TextDecoder("shift_jis", { fatal: false }) },
 ];
+const TXT_RECORD_CACHE_VERSION = 1;
+
+function cloneTxtRecord(record) {
+  if (!record) return null;
+  return {
+    ...record,
+    idTokens: Array.isArray(record.idTokens) ? [...record.idTokens] : [],
+  };
+}
+
+function createTxtRecordCache(cachePath) {
+  const state = {
+    enabled: Boolean(cachePath),
+    loaded: false,
+    dirty: false,
+    entries: new Map(),
+    seenPaths: new Set(),
+  };
+
+  async function ensureLoaded() {
+    if (!state.enabled || state.loaded) return;
+    state.loaded = true;
+
+    try {
+      const raw = await fsp.readFile(cachePath, "utf8");
+      const payload = JSON.parse(raw);
+      if (payload?.version !== TXT_RECORD_CACHE_VERSION || !Array.isArray(payload.entries)) return;
+
+      for (const entry of payload.entries) {
+        if (!entry?.filePath || !entry?.record) continue;
+        state.entries.set(entry.filePath, {
+          mtimeMs: entry.mtimeMs,
+          size: entry.size,
+          record: entry.record,
+        });
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        state.entries.clear();
+      }
+    }
+  }
+
+  async function get(filePath, stat) {
+    if (!state.enabled) return null;
+    state.seenPaths.add(filePath);
+    await ensureLoaded();
+
+    const cached = state.entries.get(filePath);
+    if (!cached) return null;
+    if (cached.mtimeMs !== stat.mtimeMs || cached.size !== stat.size) return null;
+    return cloneTxtRecord(cached.record);
+  }
+
+  async function set(filePath, stat, record) {
+    if (!state.enabled) return;
+    state.seenPaths.add(filePath);
+    await ensureLoaded();
+    state.entries.set(filePath, {
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      record: cloneTxtRecord(record),
+    });
+    state.dirty = true;
+  }
+
+  async function persist() {
+    if (!state.enabled) return;
+    await ensureLoaded();
+
+    for (const filePath of [...state.entries.keys()]) {
+      if (!state.seenPaths.has(filePath)) {
+        state.entries.delete(filePath);
+        state.dirty = true;
+      }
+    }
+
+    if (!state.dirty) return;
+
+    await fsp.mkdir(path.dirname(cachePath), { recursive: true });
+    const payload = {
+      version: TXT_RECORD_CACHE_VERSION,
+      entries: [...state.entries.entries()].map(([filePath, entry]) => ({
+        filePath,
+        mtimeMs: entry.mtimeMs,
+        size: entry.size,
+        record: entry.record,
+      })),
+    };
+    await fsp.writeFile(cachePath, JSON.stringify(payload), "utf8");
+    state.dirty = false;
+  }
+
+  return {
+    get,
+    persist,
+    set,
+  };
+}
 
 function likelyBrokenText(value) {
   if (!value) return false;
@@ -40,7 +140,11 @@ async function decodeTextFile(filePath) {
   return { text: best.text.replace(/\r\n/g, "\n"), encoding: best.encoding };
 }
 
-async function parseTxtRecord(filePath, sourceDirName) {
+async function parseTxtRecord(filePath, sourceDirName, txtRecordCache = null) {
+  const stat = await fsp.stat(filePath);
+  const cachedRecord = await txtRecordCache?.get(filePath, stat);
+  if (cachedRecord) return cachedRecord;
+
   const { text, encoding } = await decodeTextFile(filePath);
   const lines = text.split("\n");
   const metadata = {};
@@ -67,7 +171,7 @@ async function parseTxtRecord(filePath, sourceDirName) {
     }
   }
 
-  return {
+  const record = {
     type: "localFile",
     source: metadata.Source || sourceDirName,
     generationId: metadata["Generation ID"] || null,
@@ -85,9 +189,13 @@ async function parseTxtRecord(filePath, sourceDirName) {
     idTokens: [...idTokens],
     filePath,
   };
+
+  await txtRecordCache?.set(filePath, stat, record);
+  return record;
 }
 
 module.exports = {
+  createTxtRecordCache,
   decodeTextFile,
   parseTxtRecord,
 };

@@ -10,21 +10,24 @@ const {
 } = require("./indexing/common");
 const {
   listManifestFiles,
-  manifestSearchText,
+  manifestDedupeKeyFromItem,
   parseManifestItem,
 } = require("./indexing/manifest");
 const { attachLocalFiles } = require("./indexing/local-match");
+const { createTxtRecordCache } = require("./indexing/text");
 
 const fsp = fs.promises;
 
-async function buildIndex({ dataDir, sourceDirs, databaseStatus }) {
+async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = null }) {
   const entries = new Map();
   const lookupMap = new Map();
   const manifests = [];
   const manifestErrors = [];
   const manifestFiles = await listManifestFiles(dataDir);
+  const seenManifestKeys = new Set();
+  const txtRecordCache = createTxtRecordCache(txtCachePath);
 
-  for (const manifestPath of manifestFiles) {
+  for (const manifestPath of [...manifestFiles].reverse()) {
     let raw;
     try {
       raw = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
@@ -36,14 +39,20 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus }) {
       continue;
     }
 
-    manifests.push({
+    manifests.unshift({
       file: manifestPath,
       exportedAt: raw.exported_at,
       total: raw.total,
       scanSources: raw.scan_sources,
     });
 
-    for (const [itemIndex, item] of (Array.isArray(raw.items) ? raw.items : []).entries()) {
+    const manifestItems = Array.isArray(raw.items) ? raw.items : [];
+    for (let itemIndex = manifestItems.length - 1; itemIndex >= 0; itemIndex -= 1) {
+      const item = manifestItems[itemIndex];
+      const dedupeKey = manifestDedupeKeyFromItem(item);
+      if (dedupeKey && seenManifestKeys.has(dedupeKey)) continue;
+      if (dedupeKey) seenManifestKeys.add(dedupeKey);
+
       const entry = parseManifestItem(item, manifestPath, raw.exported_at, itemIndex);
       entries.set(entry.id, entry);
       for (const token of [
@@ -59,7 +68,8 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus }) {
     }
   }
 
-  await attachLocalFiles(entries, lookupMap, sourceDirs);
+  await attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache });
+  await txtRecordCache.persist();
 
   const items = [...entries.values()].map((entry) => {
     const dateSortMs = parseDateValue(entry.date);
@@ -75,7 +85,7 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus }) {
       ...(entry.ownerUsernames || []),
       ...(entry.cameoOwnerUsernames || []),
       entry.manifestFile ? path.basename(entry.manifestFile) : null,
-      manifestSearchText(entry),
+      entry.manifestSearchText,
       entry.local?.txtRaw,
     ]
       .filter(Boolean)

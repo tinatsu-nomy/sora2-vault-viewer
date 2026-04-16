@@ -628,8 +628,8 @@ async function renderDetail() {
           </div>
 
           <div class="detail-card">
-            <h3>Manifest JSON</h3>
-            <pre class="json-box">${escapeHtml(formatJson(item.debug.raw || {}))}</pre>
+            <h3>Manifest Search Fields</h3>
+            <div class="text-box">${escapeHtml(item.debug.manifestSearchText || "No manifest search fields")}</div>
           </div>
         `
         : ""

@@ -146,6 +146,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
       database.exec("DELETE FROM items_fts");
 
       for (const item of index.items) {
+        const { searchText, dateSortMs, ...detailItem } = item;
         insert.run(
           item.id,
           item.source,
@@ -176,7 +177,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
           item.local?.mediaPath || null,
           item.local?.txtPath || null,
           item.searchText,
-          JSON.stringify(item),
+          JSON.stringify(detailItem),
         );
         insertFts.run(item.id, item.searchText);
       }

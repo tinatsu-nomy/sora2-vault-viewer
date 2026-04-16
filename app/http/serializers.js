@@ -128,7 +128,7 @@ function createSerializers({ debugMode, enableSqliteCache }) {
       previewUrl: debugMode ? item.previewUrl : null,
       downloadUrl: debugMode ? item.downloadUrl : null,
       thumbUrl: debugMode ? item.thumbUrl : null,
-      permalink: debugMode ? item.raw?._raw?.post?.permalink || null : null,
+      permalink: debugMode ? item.permalink || null : null,
       local: item.local
         ? {
             txtEncoding: item.local.txtEncoding || null,
@@ -143,7 +143,7 @@ function createSerializers({ debugMode, enableSqliteCache }) {
             manifestFile: item.manifestFile || null,
             localMediaPath: item.local?.mediaPath || null,
             localTxtPath: item.local?.txtPath || null,
-            raw: item.raw || null,
+            manifestSearchText: item.manifestSearchText || null,
           }
         : null,
     };

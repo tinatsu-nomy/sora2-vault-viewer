@@ -107,7 +107,7 @@ function scoreLocalMatch(entry, localRecord) {
   return score;
 }
 
-async function attachLocalFiles(entries, lookupMap, sourceDirs) {
+async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null } = {}) {
   const unmatchedLocals = [];
 
   for (const [source, dirPath] of Object.entries(sourceDirs)) {
@@ -126,7 +126,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs) {
 
     for (const group of grouped.values()) {
       const localRecord = group.txtPath
-        ? await parseTxtRecord(group.txtPath, source)
+        ? await parseTxtRecord(group.txtPath, source, txtRecordCache)
         : {
             type: "localFile",
             source,
@@ -204,7 +204,6 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs) {
           previewUrl: null,
           downloadUrl: null,
           thumbUrl: null,
-          raw: null,
           idTokens: localRecord.idTokens,
           local: localAttachmentForGroup(group, localRecord),
         });

@@ -18,10 +18,95 @@ async function listManifestFiles(dataDir) {
   }
 }
 
+function manifestIdentity(item) {
+  const post = item?._raw?.post || {};
+  const attachment = post.attachments?.[0] || item?._raw || {};
+  const source = item?.source || "unknown";
+  const generationId = attachment.generation_id || item?._raw?.generation_id || null;
+  const taskId = item?.taskId || attachment.task_id || item?._raw?.task_id || null;
+  const postId = item?.postId || post.id || null;
+  const preferredId = item?.genId || generationId || postId || taskId || null;
+
+  return {
+    source,
+    generationId,
+    taskId,
+    postId,
+    preferredId,
+  };
+}
+
+function manifestDedupeKeyFromItem(item) {
+  const identity = manifestIdentity(item);
+  if (!identity.preferredId) return null;
+  return `${identity.source}:${identity.preferredId}`;
+}
+
+function pushSearchValue(values, value) {
+  if (value == null) return;
+  const text = String(value).trim();
+  if (!text) return;
+  if (/^https?:\/\//i.test(text)) return;
+  values.push(text);
+}
+
+function appendProfileSearchValues(profile, values, seen = new Set()) {
+  if (!profile || typeof profile !== "object" || seen.has(profile)) return;
+  seen.add(profile);
+
+  for (const key of ["username", "display_name", "description", "location", "public_figure_name"]) {
+    pushSearchValue(values, profile[key]);
+  }
+
+  appendProfileSearchValues(profile.owner_profile, values, seen);
+}
+
+function buildManifestSearchText(item) {
+  const raw = item?._raw || {};
+  const post = raw.post || {};
+  const attachment = post.attachments?.[0] || raw || {};
+  const values = [];
+  const seenProfiles = new Set();
+
+  for (const value of [
+    item?.mode,
+    raw.model,
+    raw.style,
+    post.caption,
+    post.discovery_phrase,
+    post.audience_description,
+    post.emoji,
+    post.visibility,
+    attachment.type,
+    attachment.model,
+    attachment.style,
+  ]) {
+    pushSearchValue(values, value);
+  }
+
+  appendProfileSearchValues(raw.profile, values, seenProfiles);
+
+  for (const cameoProfile of post.cameo_profiles || []) {
+    appendProfileSearchValues(cameoProfile, values, seenProfiles);
+  }
+
+  for (const facet of post.text_facets || []) {
+    appendProfileSearchValues(facet?.profile, values, seenProfiles);
+  }
+
+  return [...new Set(values)].join("\n");
+}
+
 function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   const post = item?._raw?.post || {};
   const attachment = post.attachments?.[0] || item?._raw || {};
-  const source = item.source || "unknown";
+  const {
+    source,
+    generationId,
+    taskId,
+    postId,
+    preferredId,
+  } = manifestIdentity(item);
   const posterUsername = item?._raw?.profile?.username || null;
   const cameoOwnerUsernames = [
     ...(post.cameo_profiles || []).map((profile) => profile?.username),
@@ -44,10 +129,6 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     }
   }
 
-  const generationId = item?._raw?.post?.attachments?.[0]?.generation_id || item?._raw?.generation_id || null;
-  const taskId = item.taskId || item?._raw?.task_id || null;
-  const postId = item.postId || item?._raw?.post?.id || null;
-  const preferredId = item.genId || generationId || postId || taskId;
   const manifestStem = path.basename(manifestPath, path.extname(manifestPath));
 
   return {
@@ -77,56 +158,15 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     previewUrl: item.previewUrl || null,
     downloadUrl: item.downloadUrl || null,
     thumbUrl: item.thumbUrl || null,
-    raw: item,
+    permalink: post.permalink || null,
+    manifestSearchText: buildManifestSearchText(item),
     idTokens: [...idTokens],
   };
 }
 
-function shouldSkipManifestSearchKey(key) {
-  return /url|uri|path|sig|cursor|share_ref|download|preview|thumb/i.test(String(key || ""));
-}
-
-function appendManifestSearchValues(value, values, seen) {
-  if (value == null) return;
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (/^https?:\/\//i.test(trimmed)) return;
-    values.push(trimmed);
-    return;
-  }
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    values.push(String(value));
-    return;
-  }
-
-  if (typeof value !== "object" || seen.has(value)) return;
-  seen.add(value);
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      appendManifestSearchValues(item, values, seen);
-    }
-    return;
-  }
-
-  for (const [key, nestedValue] of Object.entries(value)) {
-    if (shouldSkipManifestSearchKey(key)) continue;
-    appendManifestSearchValues(nestedValue, values, seen);
-  }
-}
-
-function manifestSearchText(entry) {
-  if (!entry?.raw?._raw) return "";
-  const values = [];
-  appendManifestSearchValues(entry.raw._raw, values, new Set());
-  return values.join("\n");
-}
-
 module.exports = {
+  buildManifestSearchText,
   listManifestFiles,
-  manifestSearchText,
+  manifestDedupeKeyFromItem,
   parseManifestItem,
 };
