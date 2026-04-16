@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.4
+
+### Security And Dependencies
+
+- Updated `electron` to `39.8.5` to address the current Dependabot security alerts affecting the desktop build
+
+### Desktop Viewer
+
+- Changed the detail view to prefer the actual loaded video resolution and aspect ratio from the local media file
+- Added fallback metadata resolution and ratio rows when the manifest or TXT metadata differs from the real local media
+
+### Documentation
+
+- Added a README note that changing the data directory after first launch also requires resetting `app-data\`
+- Updated the README release links for `v0.2.4`
+
 ## v0.2.3
 
 ### CI And Test Stability

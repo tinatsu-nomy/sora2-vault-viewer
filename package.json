@@ -1,6 +1,6 @@
 {
   "name": "sora2-vault-viewer",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "main": "electron/main.js",
   "author": "tinatsu-nomy",
@@ -14,7 +14,7 @@
     "test": "node scripts/smoke-test.js"
   },
   "devDependencies": {
-    "electron": "^35.0.0",
+    "electron": "^39.8.5",
     "electron-builder": "^26.0.12"
   },
   "build": {
