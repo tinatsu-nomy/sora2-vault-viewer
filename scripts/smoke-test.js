@@ -204,23 +204,38 @@ function waitForServer(server, { rejectOnError = true } = {}) {
   });
 }
 
-async function fetchIndexPayload(port, query = "") {
-  const response = await fetch(`http://127.0.0.1:${port}/api/index${query}`);
-  assert.equal(response.status, 200, "Expected /api/index to return 200");
-  return response.json();
-}
-
-function requestStatus(url) {
+function request(url) {
   return new Promise((resolve, reject) => {
-    const request = http.get(url, (response) => {
-      response.resume();
+    const req = http.get(url, {
+      agent: false,
+      headers: {
+        Connection: "close",
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
       response.on("end", () => {
-        resolve(response.statusCode);
+        resolve({
+          status: response.statusCode,
+          body: Buffer.concat(chunks).toString("utf8"),
+        });
       });
     });
 
-    request.on("error", reject);
+    req.on("error", reject);
   });
+}
+
+async function requestJson(url, message) {
+  const response = await request(url);
+  assert.equal(response.status, 200, message);
+  return JSON.parse(response.body);
+}
+
+async function fetchIndexPayload(port, query = "") {
+  return requestJson(`http://127.0.0.1:${port}/api/index${query}`, "Expected /api/index to return 200");
 }
 
 async function waitForCondition(check, { timeoutMs = 15000, intervalMs = 150 } = {}) {
@@ -312,9 +327,7 @@ async function run() {
   try {
     await waitForServer(server);
 
-    const indexResponse = await fetch(`http://127.0.0.1:${PORT}/api/index`);
-    assert.equal(indexResponse.status, 200, "Expected /api/index to return 200");
-    const indexPayload = await indexResponse.json();
+    const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
     assert.equal(indexPayload.items.length, 6, "Expected all manifest items to remain indexed");
     assert.equal(indexPayload.stats.totalItems, 6, "Expected stats to report all indexed items");
     assert.equal(indexPayload.stats.withLocalMedia, 1, "Expected only one item to match the local media pair");
@@ -333,67 +346,66 @@ async function run() {
       assert.equal(item.id.includes("undefined"), false, "Expected fallback manifest IDs to be stable");
     }
 
-    const manifestSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=caption`);
-    assert.equal(manifestSearchResponse.status, 200, "Expected manifest search to return 200");
-    const manifestSearchPayload = await manifestSearchResponse.json();
+    const manifestSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=caption`,
+      "Expected manifest search to return 200",
+    );
     assert.equal(manifestSearchPayload.items.length, 1, "Expected manifest-only metadata to be searchable");
 
-    const usernamePrefixSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=%40smoke`);
-    assert.equal(usernamePrefixSearchResponse.status, 200, "Expected @username prefix search to return 200");
-    const usernamePrefixSearchPayload = await usernamePrefixSearchResponse.json();
+    const usernamePrefixSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=%40smoke`,
+      "Expected @username prefix search to return 200",
+    );
     assert.equal(usernamePrefixSearchPayload.items.length, 1, "Expected @username prefix search to match manifest usernames");
 
-    const usernameNonPrefixSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=%40user`);
-    assert.equal(usernameNonPrefixSearchResponse.status, 200, "Expected non-prefix @username search to return 200");
-    const usernameNonPrefixSearchPayload = await usernameNonPrefixSearchResponse.json();
+    const usernameNonPrefixSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=%40user`,
+      "Expected non-prefix @username search to return 200",
+    );
     assert.equal(usernameNonPrefixSearchPayload.items.length, 0, "Expected non-prefix @username search not to match manifest usernames");
 
-    const literalAtSearchResponse = await fetch(
+    const literalAtSearchPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("@smoke marker")}`,
+      "Expected spaced @ query to return 200",
     );
-    assert.equal(literalAtSearchResponse.status, 200, "Expected spaced @ query to return 200");
-    const literalAtSearchPayload = await literalAtSearchResponse.json();
     assert.equal(literalAtSearchPayload.items.length, 1, "Expected spaced @ query to use simple text search");
     assert.equal(literalAtSearchPayload.items[0].prompt, "Literal @smoke marker");
 
-    const fallbackSearchResponse = await fetch(`http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`);
-    assert.equal(fallbackSearchResponse.status, 200, "Expected fallback prompt search to return 200");
-    const fallbackSearchPayload = await fallbackSearchResponse.json();
+    const fallbackSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`,
+      "Expected fallback prompt search to return 200",
+    );
     assert.equal(fallbackSearchPayload.items.length, 2, "Expected both identifier-less manifest items to be searchable");
 
-    const dateRangeHitResponse = await fetch(
+    const dateRangeHitPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-15")}&dateTo=${encodeURIComponent("2026-04-15")}`,
+      "Expected date range search to return 200",
     );
-    assert.equal(dateRangeHitResponse.status, 200, "Expected date range search to return 200");
-    const dateRangeHitPayload = await dateRangeHitResponse.json();
     assert.equal(dateRangeHitPayload.items.length, 1, "Expected the fixture item to match its own date range");
 
-    const dateRangeMissResponse = await fetch(
+    const dateRangeMissPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?dateFrom=${encodeURIComponent("2026-04-18")}`,
+      "Expected out-of-range date search to return 200",
     );
-    assert.equal(dateRangeMissResponse.status, 200, "Expected out-of-range date search to return 200");
-    const dateRangeMissPayload = await dateRangeMissResponse.json();
     assert.equal(dateRangeMissPayload.items.length, 0, "Expected out-of-range date filtering to exclude the fixture item");
 
-    const detailResponse = await fetch(
+    const detailPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(mainItem.id)}`,
+      "Expected /api/item to return 200",
     );
-    assert.equal(detailResponse.status, 200, "Expected /api/item to return 200");
-    const detailPayload = await detailResponse.json();
     assert.equal(detailPayload.mediaUrl, "/media?id=v2_profile%3Agen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
     assert.equal(detailPayload.local.txtRaw.includes("Smoke test prompt"), true);
     assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
 
-    const ambiguousDetailResponse = await fetch(
+    const ambiguousDetailPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(ambiguousItem.id)}`,
+      "Expected the ambiguous task fixture detail to load",
     );
-    assert.equal(ambiguousDetailResponse.status, 200, "Expected the ambiguous task fixture detail to load");
-    const ambiguousDetailPayload = await ambiguousDetailResponse.json();
     assert.equal(ambiguousDetailPayload.mediaUrl, null, "Expected the ambiguous task fixture not to inherit the local media URL");
 
-    const mediaStatus = await requestStatus(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
-    assert.equal(mediaStatus, 200, "Expected /media to return 200");
+    const mediaResponse = await request(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
+    assert.equal(mediaResponse.status, 200, "Expected /media to return 200");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     try {
@@ -403,6 +415,6 @@ async function run() {
 }
 
 run().catch((error) => {
-  console.error(error.message || error);
+  console.error(error?.stack || error?.message || error);
   process.exitCode = 1;
 });
