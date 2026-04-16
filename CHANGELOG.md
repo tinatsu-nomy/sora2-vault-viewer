@@ -1,6 +1,10 @@
 # Changelog
 
-## v0.2.2
+## v0.2.3
+
+### CI And Test Stability
+
+- Stabilized the smoke test media fixture so the `/media` fetch check is less likely to fail on GitHub Actions and Linux runners
 
 ### Desktop App
 

@@ -106,8 +106,8 @@ AnyFolder/
 
 Distribution:
 
-- Release page: [v0.2.2 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.2)
-- Portable download: [Sora2 Vault Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.2/Sora2%20Vault%20Viewer-portable.exe)
+- Release page: [v0.2.3 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.3)
+- Portable download: [Sora2 Vault Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.3/Sora2%20Vault%20Viewer-portable.exe)
 - Place `sora2_data/` in the same folder as `Sora2 Vault Viewer-portable.exe` before launch
 - The app stores settings, SQLite cache, and TXT cache under `app.getPath("userData")\app-data\`
 - On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`

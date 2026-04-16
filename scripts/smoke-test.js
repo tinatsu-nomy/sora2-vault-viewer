@@ -210,6 +210,19 @@ async function fetchIndexPayload(port, query = "") {
   return response.json();
 }
 
+function requestStatus(url) {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, (response) => {
+      response.resume();
+      response.on("end", () => {
+        resolve(response.statusCode);
+      });
+    });
+
+    request.on("error", reject);
+  });
+}
+
 async function waitForCondition(check, { timeoutMs = 15000, intervalMs = 150 } = {}) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -379,8 +392,8 @@ async function run() {
     const ambiguousDetailPayload = await ambiguousDetailResponse.json();
     assert.equal(ambiguousDetailPayload.mediaUrl, null, "Expected the ambiguous task fixture not to inherit the local media URL");
 
-    const mediaResponse = await fetch(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
-    assert.equal(mediaResponse.status, 200, "Expected /media to return 200");
+    const mediaStatus = await requestStatus(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
+    assert.equal(mediaStatus, 200, "Expected /media to return 200");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     try {
