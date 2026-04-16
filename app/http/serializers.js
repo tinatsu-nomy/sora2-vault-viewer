@@ -143,6 +143,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       posterUsername: item.posterUsername || null,
       profileUserId: item.profileUserId || null,
       cameoOwnerUsernames: item.cameoOwnerUsernames || [],
+      cameoProfiles: item.cameoProfiles || [],
       hasLocalMedia: item.hasLocalMedia,
       hasLocalText: item.hasLocalText,
       mediaUrl: item.hasLocalMedia ? mediaUrlFor(item.id, "media") : null,

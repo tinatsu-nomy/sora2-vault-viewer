@@ -45,6 +45,16 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     ...(baseEntry.cameoOwnerUsernames || []),
     ...(incomingEntry.cameoOwnerUsernames || []),
   ])].filter(Boolean);
+  const cameoProfiles = [
+    ...new Map(
+      [
+        ...(baseEntry.cameoProfiles || []),
+        ...(incomingEntry.cameoProfiles || []),
+      ]
+        .filter((profile) => profile?.username)
+        .map((profile) => [profile.username, profile]),
+    ).values(),
+  ];
   const idTokens = [...new Set([
     ...(baseEntry.idTokens || []),
     ...(incomingEntry.idTokens || []),
@@ -76,6 +86,7 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     ownerUsername: baseEntry.ownerUsername || incomingEntry.ownerUsername || null,
     ownerUsernames,
     cameoOwnerUsernames,
+    cameoProfiles,
     isLiked: Boolean(baseEntry.isLiked || incomingEntry.isLiked),
     previewUrl: baseEntry.previewUrl || incomingEntry.previewUrl || null,
     downloadUrl: baseEntry.downloadUrl || incomingEntry.downloadUrl || null,

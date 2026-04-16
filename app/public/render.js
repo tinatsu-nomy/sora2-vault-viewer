@@ -707,13 +707,16 @@ async function renderDetail() {
   const metadataResolution = metadataResolutionText(item);
   const metadataRatio = metadataRatioText(item);
   const sourceSummary = sourceLabelsForItem(item).join(", ");
-  const manifestSupplementRows = [
-    item.profileUserId
-      ? `<div class="detail-row"><span>profile.user_id</span><strong>${escapeHtml(item.profileUserId)}</strong></div>`
+  const manifestSupplementLines = [
+    item.posterUsername && item.profileUserId
+      ? `@${item.posterUsername} : ${item.profileUserId} (profile.user_id)`
       : "",
+    ...(item.cameoProfiles || [])
+      .filter((profile) => profile?.username && profile?.userId)
+      .map((profile) => `@${profile.username} : ${profile.userId} (cameo profile.user_id)`),
   ]
     .filter(Boolean)
-    .join("");
+    .join("\n");
 
   els.detail.innerHTML = `
     ${
@@ -774,12 +777,14 @@ async function renderDetail() {
     }
 
     ${
-      manifestSupplementRows
+      manifestSupplementLines
         ? `
           <div class="detail-card">
             <details class="detail-disclosure">
               <summary>Manifest supplement</summary>
-              <div class="detail-grid detail-grid-single detail-disclosure-content">${manifestSupplementRows}</div>
+              <div class="detail-disclosure-content">
+                <div class="text-box">${escapeHtml(manifestSupplementLines)}</div>
+              </div>
             </details>
           </div>
         `

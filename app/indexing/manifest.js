@@ -114,10 +114,20 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   } = manifestIdentity(item);
   const posterUsername = item?._raw?.profile?.username || null;
   const profileUserId = item?._raw?.profile?.user_id || null;
+  const cameoProfiles = (post.cameo_profiles || [])
+    .map((profile) => ({
+      username: profile?.username || null,
+      userId: profile?.user_id || null,
+    }))
+    .filter((profile) => profile.username);
   const cameoOwnerUsernames = [
-    ...(post.cameo_profiles || []).map((profile) => profile?.username),
+    ...cameoProfiles.map((profile) => profile.username),
   ].filter(Boolean);
   const uniqueCameoOwnerUsernames = [...new Set(cameoOwnerUsernames)].filter((username) => username !== posterUsername);
+  const uniqueCameoProfiles = cameoProfiles.filter((profile, index, allProfiles) => {
+    if (profile.username === posterUsername) return false;
+    return allProfiles.findIndex((candidate) => candidate.username === profile.username) === index;
+  });
   const ownerUsernames = [posterUsername, ...uniqueCameoOwnerUsernames].filter(Boolean);
   const uniqueOwnerUsernames = [...new Set(ownerUsernames)];
   const idTokens = new Set();
@@ -164,6 +174,7 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     ownerUsername: uniqueOwnerUsernames[0] || null,
     ownerUsernames: uniqueOwnerUsernames,
     cameoOwnerUsernames: uniqueCameoOwnerUsernames,
+    cameoProfiles: uniqueCameoProfiles,
     isLiked: Boolean(item.isLiked),
     previewUrl: item.previewUrl || null,
     downloadUrl: item.downloadUrl || null,
