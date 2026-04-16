@@ -753,6 +753,10 @@ button:disabled {
   margin-top: 12px;
 }
 
+.detail-grid.detail-grid-single {
+  grid-template-columns: 1fr;
+}
+
 .detail-row {
   display: grid;
   gap: 4px;
@@ -761,6 +765,38 @@ button:disabled {
 .detail-row span {
   font-size: 12px;
   color: var(--muted);
+}
+
+.detail-disclosure {
+  display: grid;
+  gap: 0;
+}
+
+.detail-disclosure summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.detail-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-disclosure summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.detail-disclosure[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.detail-disclosure-content {
+  margin-top: 12px;
 }
 
 .text-box,

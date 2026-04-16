@@ -616,6 +616,13 @@ async function renderDetail() {
     .join("");
   const metadataResolution = metadataResolutionText(item);
   const metadataRatio = metadataRatioText(item);
+  const manifestSupplementRows = [
+    item.profileUserId
+      ? `<div class="detail-row"><span>profile.user_id</span><strong>${escapeHtml(item.profileUserId)}</strong></div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
 
   els.detail.innerHTML = `
     ${
@@ -670,6 +677,19 @@ async function renderDetail() {
             <h3>TXT</h3>
             <div class="subtle" style="margin-bottom:10px;">encoding: ${escapeHtml(item.local.txtEncoding || "unknown")}</div>
             <div class="text-box">${escapeHtml(item.local.txtRaw)}</div>
+          </div>
+        `
+        : ""
+    }
+
+    ${
+      manifestSupplementRows
+        ? `
+          <div class="detail-card">
+            <details class="detail-disclosure">
+              <summary>Manifest supplement</summary>
+              <div class="detail-grid detail-grid-single detail-disclosure-content">${manifestSupplementRows}</div>
+            </details>
           </div>
         `
         : ""

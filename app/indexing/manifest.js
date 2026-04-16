@@ -108,6 +108,7 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     preferredId,
   } = manifestIdentity(item);
   const posterUsername = item?._raw?.profile?.username || null;
+  const profileUserId = item?._raw?.profile?.user_id || null;
   const cameoOwnerUsernames = [
     ...(post.cameo_profiles || []).map((profile) => profile?.username),
   ].filter(Boolean);
@@ -151,6 +152,7 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     likeCount: typeof post.like_count === "number" ? post.like_count : null,
     viewCount: typeof post.view_count === "number" ? post.view_count : null,
     posterUsername,
+    profileUserId,
     ownerUsername: uniqueOwnerUsernames[0] || null,
     ownerUsernames: uniqueOwnerUsernames,
     cameoOwnerUsernames: uniqueCameoOwnerUsernames,
