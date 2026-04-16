@@ -130,7 +130,10 @@ function writeFixtureData() {
     "utf8",
   );
 
-  fs.writeFileSync(path.join(PROFILE_DIR, "2026-04-15_gen_smoke123.mp4"), "");
+  fs.writeFileSync(
+    path.join(PROFILE_DIR, "2026-04-15_gen_smoke123.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
   fs.writeFileSync(
     path.join(PROFILE_DIR, "2026-04-15_gen_smoke123.txt"),
     [
