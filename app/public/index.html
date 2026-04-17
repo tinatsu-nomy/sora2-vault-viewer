@@ -14,83 +14,99 @@
         <div class="brand-block">
           <p class="eyebrow">Local Sora2 Archive</p>
           <h1>Sora2 Vault Viewer</h1>
-          <p class="subtle">Browse local videos inline while referencing manifest and text metadata</p>
+          <p class="subtle">Browse local videos with the important context visible first and the raw metadata one step deeper</p>
         </div>
-
-        <nav class="topnav" aria-label="source filters"></nav>
+        <div class="topbar-side">
+          <p class="eyebrow topbar-label">Sources</p>
+          <nav class="topnav" aria-label="source filters"></nav>
+        </div>
       </header>
 
+      <section id="stats" class="summary-strip panel"></section>
+
       <section class="toolbar panel">
-        <label class="field search-field">
-          <span>Search</span>
-          <div class="search-row">
-            <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
-            <button id="clearQueryButton" type="button" class="secondary">Clear</button>
+        <div class="toolbar-main">
+          <label class="field search-field">
+            <span>Search</span>
+            <div class="search-row">
+              <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
+              <button id="clearQueryButton" type="button" class="secondary">Clear</button>
+            </div>
+          </label>
+
+          <div class="toolbar-actions">
+            <button id="rebuildButton" type="button" class="secondary">Rescan</button>
+            <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
           </div>
-        </label>
-
-        <label class="field compact compact-two-thirds">
-          <span>Sort</span>
-          <select id="sort">
-            <option value="date-desc">Newest first</option>
-            <option value="date-asc">Oldest first</option>
-            <option value="views-desc">Most views</option>
-            <option value="views-asc">Fewest views</option>
-            <option value="likes-desc">Most likes</option>
-            <option value="likes-asc">Fewest likes</option>
-            <option value="prompt-asc">Prompt A→Z</option>
-            <option value="prompt-desc">Prompt Z→A</option>
-            <option value="duration-desc">Longest first</option>
-            <option value="duration-asc">Shortest first</option>
-            <option value="source-asc">Source order</option>
-          </select>
-        </label>
-
-        <label class="field compact compact-half">
-          <span>Items per page</span>
-          <select id="pageSize">
-            <option value="24" selected>24</option>
-            <option value="60">60</option>
-            <option value="120">120</option>
-            <option value="180">180</option>
-          </select>
-        </label>
-
-        <label class="field compact compact-two-thirds">
-          <span>Date from</span>
-          <input id="dateFrom" type="date" />
-        </label>
-
-        <label class="field compact compact-two-thirds">
-          <span>Date to</span>
-          <input id="dateTo" type="date" />
-        </label>
-
-        <label class="toggle">
-          <input id="localOnly" type="checkbox" checked />
-          <span>Local only</span>
-        </label>
-
-        <label class="toggle">
-          <input id="withMedia" type="checkbox" />
-          <span>With video</span>
-        </label>
-
-        <label class="toggle">
-          <input id="withText" type="checkbox" />
-          <span>With text</span>
-        </label>
-
-        <label class="toggle">
-          <input id="showCameo" type="checkbox" checked />
-          <span>Show cameo</span>
-        </label>
-
-        <div class="toolbar-actions">
-          <button id="resetDateButton" type="button" class="secondary">Reset dates</button>
-          <button id="rebuildButton" type="button" class="secondary">Rescan</button>
-          <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
         </div>
+
+        <div class="toolbar-toggle-row" aria-label="quick filters">
+          <label class="toggle">
+            <input id="localOnly" type="checkbox" checked />
+            <span>Local only</span>
+          </label>
+
+          <label class="toggle">
+            <input id="withMedia" type="checkbox" />
+            <span>With video</span>
+          </label>
+
+          <label class="toggle">
+            <input id="withText" type="checkbox" />
+            <span>With text</span>
+          </label>
+
+          <label class="toggle">
+            <input id="showCameo" type="checkbox" checked />
+            <span>Show cameo</span>
+          </label>
+        </div>
+
+        <details class="filter-drawer" open>
+          <summary>Advanced filters and sorting</summary>
+          <div class="toolbar-grid">
+            <label class="field compact">
+              <span>Sort</span>
+              <select id="sort">
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+                <option value="views-desc">Most views</option>
+                <option value="views-asc">Fewest views</option>
+                <option value="likes-desc">Most likes</option>
+                <option value="likes-asc">Fewest likes</option>
+                <option value="prompt-asc">Prompt A→Z</option>
+                <option value="prompt-desc">Prompt Z→A</option>
+                <option value="duration-desc">Longest first</option>
+                <option value="duration-asc">Shortest first</option>
+                <option value="source-asc">Source order</option>
+              </select>
+            </label>
+
+            <label class="field compact">
+              <span>Items per page</span>
+              <select id="pageSize">
+                <option value="24" selected>24</option>
+                <option value="60">60</option>
+                <option value="120">120</option>
+                <option value="180">180</option>
+              </select>
+            </label>
+
+            <label class="field compact">
+              <span>Date from</span>
+              <input id="dateFrom" type="date" />
+            </label>
+
+            <label class="field compact">
+              <span>Date to</span>
+              <input id="dateTo" type="date" />
+            </label>
+
+            <div class="toolbar-secondary-actions">
+              <button id="resetDateButton" type="button" class="secondary">Reset dates</button>
+            </div>
+          </div>
+        </details>
       </section>
 
       <main class="content">
@@ -117,7 +133,6 @@
         </aside>
       </main>
 
-      <section id="stats" class="summary-strip"></section>
     </div>
 
     <div id="rebuildModal" class="modal-backdrop hidden" aria-hidden="true">

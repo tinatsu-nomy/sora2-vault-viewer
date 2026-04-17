@@ -10,6 +10,23 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function eyeIconMarkup() {
+  return `
+    <svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.2 12c2.1-3.8 5.8-6 9.8-6s7.7 2.2 9.8 6c-2.1 3.8-5.8 6-9.8 6S4.3 15.8 2.2 12Z"></path>
+      <circle cx="12" cy="12" r="3.2"></circle>
+    </svg>
+  `;
+}
+
+function heartIconMarkup() {
+  return `
+    <svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 21.3 10.6 20C5.4 15.2 2 12.1 2 8.3 2 5.2 4.4 3 7.4 3c1.7 0 3.4.8 4.6 2.2C13.2 3.8 14.9 3 16.6 3 19.6 3 22 5.2 22 8.3c0 3.8-3.4 6.9-8.6 11.7L12 21.3Z"></path>
+    </svg>
+  `;
+}
+
 function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -323,6 +340,10 @@ function renderIndexStatus() {
 
 function renderStats() {
   const stats = state.stats;
+  if (!stats) {
+    els.stats.innerHTML = "";
+    return;
+  }
   const pathRows = [
     stats.paths?.dataDir ? `<div class="subtle">data: ${escapeHtml(stats.paths.dataDir)}</div>` : "",
     stats.paths?.appDataDir ? `<div class="subtle">app-data: ${escapeHtml(stats.paths.appDataDir)}</div>` : "",
@@ -341,46 +362,67 @@ function renderStats() {
       return `<div class="subtle">${escapeHtml(fileName)}</div>`;
     })
     .join("");
+  const sourceCount = Array.isArray(stats.sourceOrder)
+    ? stats.sourceOrder.length
+    : Array.isArray(stats.sources)
+      ? stats.sources.length
+      : 0;
 
   els.stats.innerHTML = `
-    <article class="summary-card">
-      <strong>${stats.totalItems}</strong>
-      <small>Total items</small>
-    </article>
-    <article class="summary-card">
-      <strong>${stats.withLocalMedia}</strong>
-      <small>Playable locally</small>
-    </article>
-    <article class="summary-card">
-      <strong>${stats.withLocalText}</strong>
-      <small>With TXT</small>
-    </article>
-    <article class="summary-card">
-      <strong>${stats.localOnlyItems}</strong>
-      <small>Without manifest</small>
-    </article>
-    <article class="summary-card db-card">
-      <strong>SQLite Cache</strong>
-      <div class="subtle">
-        ${
-          stats.database?.enabled
-            ? `saved items: ${escapeHtml(String(stats.database?.savedItems || 0))}`
-            : `disabled: ${escapeHtml(stats.database?.error || "unknown")}`
-        }
+    <div class="summary-grid">
+      <article class="summary-card summary-card-feature">
+        <span class="summary-label">Library</span>
+        <strong>${stats.totalItems}</strong>
+        <small>Total indexed items</small>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Playback</span>
+        <strong>${stats.withLocalMedia}</strong>
+        <small>Playable locally</small>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Text</span>
+        <strong>${stats.withLocalText}</strong>
+        <small>Items with TXT</small>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Manifest Gap</span>
+        <strong>${stats.localOnlyItems}</strong>
+        <small>Local-only items</small>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">Sources</span>
+        <strong>${sourceCount}</strong>
+        <small>Visible source buckets</small>
+      </article>
+    </div>
+    <details class="stats-drawer">
+      <summary>Diagnostics, manifests, and storage paths</summary>
+      <div class="stats-drawer-grid">
+        <article class="summary-card db-card">
+          <strong>SQLite Cache</strong>
+          <div class="subtle">
+            ${
+              stats.database?.enabled
+                ? `saved items: ${escapeHtml(String(stats.database?.savedItems || 0))}`
+                : `disabled: ${escapeHtml(stats.database?.error || "unknown")}`
+            }
+          </div>
+        </article>
+        <article class="summary-card db-card">
+          <strong>Loaded manifests</strong>
+          ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
+        </article>
+        <article class="summary-card db-card summary-card-wide summary-card-light">
+          <strong>Paths</strong>
+          ${pathRows || '<div class="subtle">No runtime paths available</div>'}
+        </article>
+        <article class="summary-card db-card summary-card-wide summary-card-light">
+          <strong>Startup Log</strong>
+          ${startupLogs || '<div class="subtle">No startup logs available</div>'}
+        </article>
       </div>
-    </article>
-    <article class="summary-card db-card">
-      <strong>Loaded manifests</strong>
-      ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
-    </article>
-    <article class="summary-card db-card summary-card-wide summary-card-light">
-      <strong>Paths</strong>
-      ${pathRows || '<div class="subtle">No runtime paths available</div>'}
-    </article>
-    <article class="summary-card db-card summary-card-wide summary-card-light">
-      <strong>Startup Log</strong>
-      ${startupLogs || '<div class="subtle">No startup logs available</div>'}
-    </article>
+    </details>
   `;
 }
 
@@ -577,14 +619,28 @@ function renderList() {
   els.list.innerHTML = state.items
     .map((item) => {
       const title = displayTitle(item);
-      const localMediaUrl = item.mediaUrl || null;
       const posterUsername = formatPosterUsername(item);
-      const cameoUsernames = formatCameoUsernames(item);
-      const posterLabel = posterUsername
-        ? userInlineMarkup(`posted by ${posterUsername}`, avatarUrlForItem(item, "poster"))
-        : "";
+      const cameoCount = cameoEntries(item).length;
       const sourceBadges = sourceLabelsForItem(item)
         .map((label) => `<span class="badge">${escapeHtml(label)}</span>`)
+        .join("");
+      const metadataBits = [
+        item.date ? `<span>${escapeHtml(item.date)}</span>` : "",
+        item.duration ? `<span>${escapeHtml(String(item.duration))}s</span>` : "",
+      ]
+        .filter(Boolean)
+        .join("");
+      const peopleLabel = [
+        posterUsername ? `<span>${escapeHtml(posterUsername)}</span>` : "",
+        state.filters.showCameo && cameoCount ? `<span>cameo ${escapeHtml(String(cameoCount))}</span>` : "",
+      ]
+        .filter(Boolean)
+        .join("");
+      const statBits = [
+        typeof item.likeCount === "number" ? `<span>${heartIconMarkup()} ${escapeHtml(String(item.likeCount))}</span>` : "",
+        typeof item.viewCount === "number" ? `<span>${eyeIconMarkup()} ${escapeHtml(String(item.viewCount))}</span>` : "",
+      ]
+        .filter(Boolean)
         .join("");
       return `
         <article class="gallery-card ${item.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(item.id)}">
@@ -603,23 +659,21 @@ function renderList() {
               <div class="badge-row">
                 ${sourceBadges}
                 ${item.hasLocalMedia ? '<span class="badge good">local play</span>' : '<span class="badge warn">remote only</span>'}
-                ${typeof item.likeCount === "number" ? `<span class="badge">♥ ${escapeHtml(String(item.likeCount))}</span>` : ""}
-                ${typeof item.viewCount === "number" ? `<span class="badge">◉ ${escapeHtml(String(item.viewCount))}</span>` : ""}
+                ${item.local?.txtRaw ? '<span class="badge">TXT</span>' : ""}
               </div>
             </div>
             <div class="gallery-bottom">
               <div class="gallery-title">${escapeHtml(title)}</div>
-              <div class="meta-row">
-                ${item.date ? `<span class="meta-pill">${escapeHtml(item.date)}</span>` : ""}
-                ${item.duration ? `<span class="meta-pill">${escapeHtml(String(item.duration))}s</span>` : ""}
-                ${posterLabel ? `<span class="meta-pill">${posterLabel}</span>` : ""}
-                ${state.filters.showCameo && cameoUsernames ? `<span class="meta-pill">cameo ${escapeHtml(cameoUsernames)}</span>` : ""}
+              <div class="gallery-meta-line">
+                ${metadataBits || '<span>No timeline metadata</span>'}
               </div>
-              <div class="card-links">
-                ${localMediaUrl ? "<span>plays in viewer</span>" : ""}
-                ${!localMediaUrl && item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">preview</a>` : ""}
-                ${item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">download</a>` : ""}
-                ${item.thumbUrl ? `<a href="${escapeHtml(item.thumbUrl)}" target="_blank" rel="noreferrer">thumb</a>` : ""}
+              <div class="gallery-footer">
+                <div class="gallery-people">
+                  ${peopleLabel || "<span>Open for more details</span>"}
+                </div>
+                <div class="gallery-stat-line">
+                  ${statBits || "<span>tap to inspect</span>"}
+                </div>
               </div>
             </div>
           </div>
@@ -749,18 +803,20 @@ async function renderDetail() {
   const posterInline = posterUsername ? userInlineMarkup(posterUsername, avatarUrlForItem(item, "poster")) : "";
   const cameoInline = cameoInlineMarkup(item);
   const summaryChips = [
+    item.hasLocalMedia ? '<span class="detail-chip accent">Local playback</span>' : '<span class="detail-chip">Remote links only</span>',
     item.date ? `<span class="detail-chip">${escapeHtml(item.date)}</span>` : "",
-    posterUsername ? `<span class="detail-chip accent">${userInlineMarkup(`posted by ${posterUsername}`, avatarUrlForItem(item, "poster"))}</span>` : "",
-    typeof item.likeCount === "number" ? `<span class="detail-chip">♥ ${escapeHtml(item.likeCount)}</span>` : "",
-    typeof item.viewCount === "number" ? `<span class="detail-chip">◉ ${escapeHtml(item.viewCount)}</span>` : "",
+    sourceLabelsForItem(item).length ? `<span class="detail-chip">${escapeHtml(sourceLabelsForItem(item).join(", "))}</span>` : "",
+    posterUsername ? `<span class="detail-chip">${userInlineMarkup(`posted by ${posterUsername}`, avatarUrlForItem(item, "poster"))}</span>` : "",
+    typeof item.likeCount === "number" ? `<span class="detail-chip">${heartIconMarkup()} ${escapeHtml(item.likeCount)}</span>` : "",
+    typeof item.viewCount === "number" ? `<span class="detail-chip">${eyeIconMarkup()} ${escapeHtml(item.viewCount)}</span>` : "",
   ]
     .filter(Boolean)
     .join("");
   const links = [
-    item.previewUrl ? `<a href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">previewUrl</a>` : "",
-    item.downloadUrl ? `<a href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">downloadUrl</a>` : "",
-    item.thumbUrl ? `<a href="${escapeHtml(item.thumbUrl)}" target="_blank" rel="noreferrer">thumbUrl</a>` : "",
-    item.permalink ? `<a href="${escapeHtml(item.permalink)}" target="_blank" rel="noreferrer">permalink</a>` : "",
+    item.previewUrl ? `<a class="detail-link" href="${escapeHtml(item.previewUrl)}" target="_blank" rel="noreferrer">Preview</a>` : "",
+    item.downloadUrl ? `<a class="detail-link" href="${escapeHtml(item.downloadUrl)}" target="_blank" rel="noreferrer">Download</a>` : "",
+    item.thumbUrl ? `<a class="detail-link" href="${escapeHtml(item.thumbUrl)}" target="_blank" rel="noreferrer">Thumbnail</a>` : "",
+    item.permalink ? `<a class="detail-link" href="${escapeHtml(item.permalink)}" target="_blank" rel="noreferrer">Permalink</a>` : "",
   ]
     .filter(Boolean)
     .join("");
@@ -786,10 +842,26 @@ async function renderDetail() {
     }
 
     <div class="detail-hero">
-      <div class="detail-hero-kicker">Selected item</div>
+      <div class="detail-hero-kicker">Selected clip</div>
       <h3 class="detail-hero-title">${escapeHtml(displayTitle(item))}</h3>
       <div class="detail-hero-chips">${summaryChips || '<span class="detail-chip">No summary metadata</span>'}</div>
     </div>
+
+    <div class="detail-card">
+      <h3>Prompt</h3>
+      <div class="prompt-box">${escapeHtml(displayTitle(item) || "No prompt text available")}</div>
+    </div>
+
+    ${
+      links
+        ? `
+          <div class="detail-card">
+            <h3>Open related links</h3>
+            <div class="detail-link-grid">${links}</div>
+          </div>
+        `
+        : ""
+    }
 
     <div class="detail-card">
       <h3>Overview</h3>
@@ -798,8 +870,8 @@ async function renderDetail() {
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
         <div class="detail-row"><span>posted by</span><strong>${posterInline}</strong></div>
         ${state.filters.showCameo ? `<div class="detail-row"><span>cameo</span><strong class="detail-user-list">${cameoInline || escapeHtml(cameoUsernames)}</strong></div>` : ""}
-        <div class="detail-row"><span>♥</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
-        <div class="detail-row"><span>◉</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
+        <div class="detail-row"><span class="detail-label-icon">${heartIconMarkup()}</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
+        <div class="detail-row"><span class="detail-label-icon">${eyeIconMarkup()}</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
         <div class="detail-row"><span>resolution</span><strong data-detail-resolution>${escapeHtml(metadataResolution)}</strong></div>
         <div class="detail-row hidden" data-detail-metadata-resolution-row><span>metadata resolution</span><strong>${escapeHtml(metadataResolution)}</strong></div>
@@ -808,29 +880,17 @@ async function renderDetail() {
       </div>
     </div>
 
-    <div class="detail-card">
-      <h3>Prompt</h3>
-      <div class="prompt-box">${escapeHtml(displayTitle(item))}</div>
-    </div>
-
-    ${
-      links
-        ? `
-          <div class="detail-card">
-            <h3>Links</h3>
-            <div class="links">${links}</div>
-          </div>
-        `
-        : ""
-    }
-
     ${
       item.local?.txtRaw
         ? `
           <div class="detail-card">
-            <h3>TXT</h3>
-            <div class="subtle" style="margin-bottom:10px;">encoding: ${escapeHtml(item.local.txtEncoding || "unknown")}</div>
-            <div class="text-box">${escapeHtml(item.local.txtRaw)}</div>
+            <details class="detail-disclosure">
+              <summary>TXT transcript</summary>
+              <div class="detail-disclosure-content">
+                <div class="subtle" style="margin-bottom:10px;">encoding: ${escapeHtml(item.local.txtEncoding || "unknown")}</div>
+                <div class="text-box">${escapeHtml(item.local.txtRaw)}</div>
+              </div>
+            </details>
           </div>
         `
         : ""
@@ -855,15 +915,21 @@ async function renderDetail() {
       item.debug
         ? `
           <div class="detail-card">
-            <h3>Local Files</h3>
-            <div class="text-box">${escapeHtml(
-              [item.debug.localMediaPath, item.debug.localTxtPath].filter(Boolean).join("\n") || "No local files detected",
-            )}</div>
-          </div>
-
-          <div class="detail-card">
-            <h3>Manifest Search Fields</h3>
-            <div class="text-box">${escapeHtml(item.debug.manifestSearchText || "No manifest search fields")}</div>
+            <details class="detail-disclosure">
+              <summary>Debug paths and manifest search fields</summary>
+              <div class="detail-disclosure-content detail-stack">
+                <div>
+                  <div class="subtle" style="margin-bottom:10px;">Local files</div>
+                  <div class="text-box">${escapeHtml(
+                    [item.debug.localMediaPath, item.debug.localTxtPath].filter(Boolean).join("\n") || "No local files detected",
+                  )}</div>
+                </div>
+                <div>
+                  <div class="subtle" style="margin-bottom:10px;">Manifest search fields</div>
+                  <div class="text-box">${escapeHtml(item.debug.manifestSearchText || "No manifest search fields")}</div>
+                </div>
+              </div>
+            </details>
           </div>
         `
         : ""
