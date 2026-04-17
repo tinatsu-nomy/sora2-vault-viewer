@@ -11,6 +11,7 @@ const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
 const LIKED_DIR = path.join(DATA_DIR, "sora_v2_liked");
 const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
+const CHARACTER_DIR = path.join(DATA_DIR, "sora_characters_@smoke_user");
 const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
 const PORT = 33210;
 const RETRY_PORT = 33230;
@@ -34,6 +35,7 @@ function writeFixtureData() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   fs.mkdirSync(LIKED_DIR, { recursive: true });
   fs.mkdirSync(USER_DIR, { recursive: true });
+  fs.mkdirSync(CHARACTER_DIR, { recursive: true });
 
   const manifest = {
     exported_at: "2026-04-15T00:00:00Z",
@@ -61,7 +63,9 @@ function writeFixtureData() {
             like_count: 7,
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
-            cameo_profiles: [],
+            cameo_profiles: [
+              { username: "cameo.source.hero", user_id: "user-cameo-hero" },
+            ],
           },
         },
       },
@@ -86,7 +90,9 @@ function writeFixtureData() {
             like_count: 7,
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
-            cameo_profiles: [],
+            cameo_profiles: [
+              { username: "cameo.source.hero", user_id: "user-cameo-hero" },
+            ],
           },
         },
       },
@@ -249,6 +255,11 @@ function writeFixtureData() {
       "Bucket user shared item",
     ].join("\n"),
     "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(CHARACTER_DIR, "owner_cameo.source.hero_Friendly_Hero.jpg"),
+    Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
   );
 }
 
@@ -527,6 +538,8 @@ async function run() {
     assert.equal(detailPayload.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
     assert.equal(detailPayload.local.txtRaw.includes("Smoke test prompt"), true);
+    assert.equal(detailPayload.cameoProfiles.length, 1, "Expected cameo profile metadata to be preserved");
+    assert.equal(detailPayload.cameoProfiles[0].username, "cameo.source.hero");
     assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
 
     const ambiguousDetailPayload = await requestJson(
@@ -537,6 +550,11 @@ async function run() {
 
     const mediaResponse = await request(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
     assert.equal(mediaResponse.status, 200, "Expected /media to return 200");
+
+    const cameoAvatarResponse = await request(
+      `http://127.0.0.1:${PORT}/avatar?id=${encodeURIComponent(mainItem.id)}&role=cameo&username=${encodeURIComponent("cameo.source.hero")}`,
+    );
+    assert.equal(cameoAvatarResponse.status, 200, "Expected /avatar to resolve cameo avatars from owner_<cameo username> fallback files");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     try {

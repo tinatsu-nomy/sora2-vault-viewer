@@ -193,17 +193,32 @@ function avatarIdentityForItem(item, role, requestedUsername) {
       userId: item.profileUserId || null,
       username: username || null,
       ownerUsername: username || null,
+      searchOwnerUsernames: [username || null].filter(Boolean),
     };
   }
 
   if (role === "cameo") {
     const normalizedUsername = String(requestedUsername || "").trim().replace(/^@+/, "");
-    const matchedProfile = (item.cameoProfiles || []).find((profile) => profile?.username === normalizedUsername);
+    const matchedProfile = (item.cameoProfiles || []).find((profile) => {
+      return String(profile?.username || "").trim().replace(/^@+/, "") === normalizedUsername;
+    });
     const username = matchedProfile?.username || normalizedUsername || null;
+    const derivedOwnerUsername = username ? username.split(".")[0] : null;
+    const searchOwnerUsernames = [
+      item.posterUsername,
+      item.ownerUsername,
+      ...(item.ownerUsernames || []),
+      derivedOwnerUsername,
+      username,
+    ]
+      .map((value) => String(value || "").trim().replace(/^@+/, ""))
+      .filter(Boolean)
+      .filter((value, index, allValues) => allValues.indexOf(value) === index);
     return {
       userId: matchedProfile?.userId || null,
       username,
-      ownerUsername: username ? username.split(".")[0] : null,
+      ownerUsername: derivedOwnerUsername,
+      searchOwnerUsernames,
     };
   }
 
@@ -211,10 +226,9 @@ function avatarIdentityForItem(item, role, requestedUsername) {
 }
 
 function avatarSearchDirs(identity) {
-  const dirs = [];
-  if (identity?.ownerUsername) {
-    dirs.push(path.join(DATA_DIR, `sora_characters_@${identity.ownerUsername}`));
-  }
+  const dirs = (identity?.searchOwnerUsernames || [identity?.ownerUsername])
+    .filter(Boolean)
+    .map((ownerUsername) => path.join(DATA_DIR, `sora_characters_@${ownerUsername}`));
 
   dirs.push(
     path.join(AVATAR_DIR, "cameo"),
@@ -237,29 +251,45 @@ function avatarCandidateNames(identity) {
 }
 
 async function resolveCharacterAvatarPath(identity, role) {
-  if (!identity?.ownerUsername) return null;
-  const baseDir = path.join(DATA_DIR, `sora_characters_@${identity.ownerUsername}`);
-  if (!isPathInside(DATA_DIR, baseDir)) return null;
+  const baseDirs = (identity?.searchOwnerUsernames || [identity?.ownerUsername])
+    .filter(Boolean)
+    .map((ownerUsername) => path.join(DATA_DIR, `sora_characters_@${ownerUsername}`))
+    .filter((baseDir, index, allDirs) => allDirs.indexOf(baseDir) === index);
 
-  let entries = [];
-  try {
-    entries = await fsp.readdir(baseDir, { withFileTypes: true });
-  } catch (error) {
-    if (error?.code === "ENOENT") return null;
-    throw error;
-  }
+  if (!baseDirs.length) return null;
 
-  const expectedStem = role === "poster"
-    ? `owner_${identity.ownerUsername}`
-    : `character_${identity.username}`;
+  const expectedStems = role === "poster"
+    ? [`owner_${identity.ownerUsername || ""}`]
+    : [
+        `character_${identity.username || ""}`,
+        `owner_${identity.username || ""}`,
+      ];
+  const normalizedExpectedStems = expectedStems
+    .filter(Boolean)
+    .map((stem) => stem.toLowerCase());
 
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const ext = path.extname(entry.name).toLowerCase();
-    if (!AVATAR_EXTENSIONS.includes(ext)) continue;
-    const stem = path.basename(entry.name, ext);
-    if (stem === expectedStem || stem.startsWith(`${expectedStem}_`)) {
-      return path.join(baseDir, entry.name);
+  for (const baseDir of baseDirs) {
+    if (!isPathInside(DATA_DIR, baseDir)) continue;
+
+    let entries = [];
+    try {
+      entries = await fsp.readdir(baseDir, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!AVATAR_EXTENSIONS.includes(ext)) continue;
+      const stem = path.basename(entry.name, ext);
+      const normalizedStem = stem.toLowerCase();
+      if (normalizedExpectedStems.some((expectedStem) => {
+        return normalizedStem === expectedStem || normalizedStem.startsWith(`${expectedStem}_`);
+      })) {
+        return path.join(baseDir, entry.name);
+      }
     }
   }
 
