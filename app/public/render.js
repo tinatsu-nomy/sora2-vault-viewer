@@ -155,6 +155,72 @@ function navChips() {
   return [...(els.topnav?.querySelectorAll(".nav-chip") || [])];
 }
 
+function sourceMenuMarkup({
+  sources,
+  menuRole,
+  summaryLabel,
+  title,
+  toggleLabel,
+}) {
+  if (!sources.length) return "";
+  const sourceOptions = sources
+    .map((source) => `
+      <label class="source-menu-option">
+        <input type="checkbox" class="source-menu-checkbox" data-source="${escapeHtml(source)}" />
+        <span>${escapeHtml(viewer.sourceDisplayName(source))}</span>
+      </label>
+    `)
+    .join("");
+  return `
+    <details class="source-menu" data-role="${escapeHtml(menuRole)}">
+      <summary class="nav-chip source-menu-summary">${escapeHtml(summaryLabel)}</summary>
+      <div class="source-menu-panel">
+        <div class="source-menu-head">
+          <strong>${escapeHtml(title)}</strong>
+          <span class="subtle" data-role="${escapeHtml(`${menuRole}-count`)}"></span>
+        </div>
+        <label class="source-menu-master-toggle">
+          <input type="checkbox" data-role="${escapeHtml(`${menuRole}-toggle`)}" />
+          <span>${escapeHtml(toggleLabel)}</span>
+        </label>
+        <div class="source-menu-list">
+          ${sourceOptions}
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function charSourceMenuMarkup(groups) {
+  if (!groups.length) return "";
+  const sourceOptions = groups
+    .map((group) => `
+      <label class="source-menu-option">
+        <input type="checkbox" class="source-menu-checkbox" data-char-group="${escapeHtml(group.id)}" />
+        <span>${escapeHtml(group.label)}</span>
+      </label>
+    `)
+    .join("");
+  return `
+    <details class="source-menu" data-role="char-sources">
+      <summary class="nav-chip source-menu-summary">Chars</summary>
+      <div class="source-menu-panel">
+        <div class="source-menu-head">
+          <strong>Character sources</strong>
+          <span class="subtle" data-role="char-sources-count"></span>
+        </div>
+        <label class="source-menu-master-toggle">
+          <input type="checkbox" data-role="char-sources-toggle" />
+          <span>Enable all chars</span>
+        </label>
+        <div class="source-menu-list">
+          ${sourceOptions}
+        </div>
+      </div>
+    </details>
+  `;
+}
+
 function renderSourceNav() {
   if (!els.topnav) return;
 
@@ -163,40 +229,20 @@ function renderSourceNav() {
       <button type="button" class="nav-chip" data-source="${escapeHtml(source)}">${escapeHtml(viewer.sourceDisplayName(source))}</button>
     `)
     .join("");
-  const customSources = viewer.customSources();
-  const customSourceOptions = customSources
-    .map((source) => `
-      <label class="source-menu-option">
-        <input type="checkbox" class="source-menu-checkbox" data-source="${escapeHtml(source)}" />
-        <span>${escapeHtml(viewer.sourceDisplayName(source))}</span>
-      </label>
-    `)
-    .join("");
-  const customSourceMenu = customSources.length
-    ? `
-      <details class="source-menu" data-role="custom-sources">
-        <summary class="nav-chip source-menu-summary">Users</summary>
-        <div class="source-menu-panel">
-          <div class="source-menu-head">
-            <strong>User sources</strong>
-            <span class="subtle" data-role="custom-source-count"></span>
-          </div>
-          <label class="source-menu-master-toggle">
-            <input type="checkbox" data-role="custom-source-toggle" />
-            <span>Enable all users</span>
-          </label>
-          <div class="source-menu-list">
-            ${customSourceOptions}
-          </div>
-        </div>
-      </details>
-    `
-    : "";
+  const customSourceMenu = sourceMenuMarkup({
+    sources: viewer.customSources(),
+    menuRole: "custom-sources",
+    summaryLabel: "Users",
+    title: "User sources",
+    toggleLabel: "Enable all users",
+  });
+  const charSourceMenu = charSourceMenuMarkup(viewer.charSourceGroups());
 
   els.topnav.innerHTML = `
     <button type="button" class="nav-chip" data-source="all">All</button>
     ${primarySourceButtons}
     ${customSourceMenu}
+    ${charSourceMenu}
   `;
 
   syncNavChips();
@@ -226,35 +272,58 @@ function syncNavChips() {
     chip.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
 
-  const customSources = viewer.customSources(visibleSources);
-  const selectedCustomSources = customSources.filter((source) => selectedSources.has(source));
-  const customSourceMenu = els.topnav?.querySelector('[data-role="custom-sources"]');
-  const customSourceSummary = customSourceMenu?.querySelector(".source-menu-summary");
-  const customSourceCount = customSourceMenu?.querySelector('[data-role="custom-source-count"]');
-  const customSourceToggle = customSourceMenu?.querySelector('[data-role="custom-source-toggle"]');
-
   for (const checkbox of els.topnav?.querySelectorAll(".source-menu-checkbox") || []) {
+    if (checkbox.dataset.charGroup) {
+      const group = viewer.charSourceGroups(visibleSources).find((entry) => entry.id === checkbox.dataset.charGroup);
+      const selectedCount = group ? group.sources.filter((source) => selectedSources.has(source)).length : 0;
+      checkbox.checked = Boolean(group?.sources.length) && selectedCount === group.sources.length;
+      checkbox.indeterminate = selectedCount > 0 && selectedCount < (group?.sources.length || 0);
+      continue;
+    }
     checkbox.checked = selectedSources.has(checkbox.dataset.source);
   }
 
-  if (customSourceSummary) {
-    const hasSelection = selectedCustomSources.length > 0;
-    customSourceSummary.classList.toggle("active", hasSelection);
-    customSourceSummary.setAttribute("aria-pressed", hasSelection ? "true" : "false");
-    customSourceSummary.textContent = hasSelection
-      ? `Users (${selectedCustomSources.length})`
-      : `Users (${customSources.length})`;
-  }
+  const sourceMenus = [
+    {
+      menuRole: "custom-sources",
+      summaryLabel: "Users",
+      sources: viewer.customSources(visibleSources),
+    },
+    {
+      menuRole: "char-sources",
+      summaryLabel: "Chars",
+      sources: viewer.charSourceGroups(visibleSources),
+    },
+  ];
 
-  if (customSourceCount) {
-    customSourceCount.textContent = customSources.length
-      ? `${selectedCustomSources.length}/${customSources.length} selected`
-      : "";
-  }
+  for (const { menuRole, summaryLabel, sources } of sourceMenus) {
+    const selectedMenuSources = menuRole === "char-sources"
+      ? sources.filter((group) => group.sources.some((source) => selectedSources.has(source)))
+      : sources.filter((source) => selectedSources.has(source));
+    const sourceMenu = els.topnav?.querySelector(`[data-role="${menuRole}"]`);
+    const sourceSummary = sourceMenu?.querySelector(".source-menu-summary");
+    const sourceCount = sourceMenu?.querySelector(`[data-role="${menuRole}-count"]`);
+    const sourceToggle = sourceMenu?.querySelector(`[data-role="${menuRole}-toggle"]`);
 
-  if (customSourceToggle) {
-    customSourceToggle.checked = customSources.length > 0 && selectedCustomSources.length === customSources.length;
-    customSourceToggle.indeterminate = selectedCustomSources.length > 0 && selectedCustomSources.length < customSources.length;
+    if (sourceSummary) {
+      const hasSelection = selectedMenuSources.length > 0;
+      sourceSummary.classList.toggle("active", hasSelection);
+      sourceSummary.setAttribute("aria-pressed", hasSelection ? "true" : "false");
+      sourceSummary.textContent = hasSelection
+        ? `${summaryLabel} (${selectedMenuSources.length})`
+        : `${summaryLabel} (${sources.length})`;
+    }
+
+    if (sourceCount) {
+      sourceCount.textContent = sources.length
+        ? `${selectedMenuSources.length}/${sources.length} selected`
+        : "";
+    }
+
+    if (sourceToggle) {
+      sourceToggle.checked = sources.length > 0 && selectedMenuSources.length === sources.length;
+      sourceToggle.indeterminate = selectedMenuSources.length > 0 && selectedMenuSources.length < sources.length;
+    }
   }
 }
 

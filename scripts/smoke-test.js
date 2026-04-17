@@ -11,6 +11,8 @@ const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
 const LIKED_DIR = path.join(DATA_DIR, "sora_v2_liked");
 const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
+const CHAR_DIR = path.join(DATA_DIR, "sora_v2_char_@sparklecat");
+const CHAR_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_char_drafts_@sparklecat");
 const CHARACTER_DIR = path.join(DATA_DIR, "sora_characters_@smoke_user");
 const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
 const PORT = 33210;
@@ -35,6 +37,8 @@ function writeFixtureData() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   fs.mkdirSync(LIKED_DIR, { recursive: true });
   fs.mkdirSync(USER_DIR, { recursive: true });
+  fs.mkdirSync(CHAR_DIR, { recursive: true });
+  fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
   fs.mkdirSync(CHARACTER_DIR, { recursive: true });
 
   const manifest = {
@@ -258,6 +262,50 @@ function writeFixtureData() {
   );
 
   fs.writeFileSync(
+    path.join(CHAR_DIR, "2026-04-11_gen_char111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(CHAR_DIR, "2026-04-11_gen_char111.txt"),
+    [
+      "Source: v2_char_@sparklecat",
+      "Generation ID: gen_char111",
+      "Task ID: task_char111",
+      "Post ID: s_char111",
+      "Date: 2026-04-11",
+      "Duration: 6",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Character source prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(CHAR_DRAFT_DIR, "2026-04-12_gen_chardraft111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(CHAR_DRAFT_DIR, "2026-04-12_gen_chardraft111.txt"),
+    [
+      "Source: v2_char_drafts_@sparklecat",
+      "Generation ID: gen_chardraft111",
+      "Task ID: task_chardraft111",
+      "Post ID: s_chardraft111",
+      "Date: 2026-04-12",
+      "Duration: 4",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Character drafts prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
     path.join(CHARACTER_DIR, "owner_cameo.source.hero_Friendly_Hero.jpg"),
     Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
   );
@@ -389,7 +437,7 @@ async function assertRestartRefreshesCachedIndex() {
   try {
     await waitForServer(firstServer);
     const firstPayload = await fetchIndexPayload(PORT);
-    assert.equal(firstPayload.stats.totalItems, 6, "Expected initial startup to index the fixture manifest");
+    assert.equal(firstPayload.stats.totalItems, 8, "Expected initial startup to index the fixture manifest and local-only char sources");
   } finally {
     await new Promise((resolve) => firstServer.close(resolve));
   }
@@ -402,11 +450,11 @@ async function assertRestartRefreshesCachedIndex() {
     await waitForServer(secondServer);
     const immediatePayload = await fetchIndexPayload(PORT);
     assert.equal(
-      [6, 7].includes(immediatePayload.stats.totalItems),
+      [8, 9].includes(immediatePayload.stats.totalItems),
       true,
       "Expected restart to return either the cached index immediately or the refreshed index if rebuilding already finished",
     );
-    if (immediatePayload.stats.totalItems === 6) {
+    if (immediatePayload.stats.totalItems === 8) {
       assert.equal(
         immediatePayload.indexStatus?.isRefreshing,
         true,
@@ -416,7 +464,7 @@ async function assertRestartRefreshesCachedIndex() {
 
     const secondPayload = await waitForCondition(async () => {
       const payload = await fetchIndexPayload(PORT);
-      return payload.stats.totalItems === 7 ? payload : null;
+      return payload.stats.totalItems === 9 ? payload : null;
     });
     assert(
       secondPayload.items.some((item) => item.genId === "gen_after_restart"),
@@ -438,10 +486,12 @@ async function run() {
     await waitForServer(server);
 
     const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
-    assert.equal(indexPayload.items.length, 7, "Expected all manifest items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 7, "Expected stats to report all indexed items");
-    assert.equal(indexPayload.stats.withLocalMedia, 2, "Expected two merged items to match local media pairs");
+    assert.equal(indexPayload.items.length, 9, "Expected all manifest and local-only fixture items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 9, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.stats.withLocalMedia, 4, "Expected merged items plus char sources to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
+    assert(indexPayload.stats.sourceOrder.includes("v2_char_@sparklecat"), "Expected char sources to be included in source order");
+    assert(indexPayload.stats.sourceOrder.includes("v2_char_drafts_@sparklecat"), "Expected char draft sources to be included in source order");
     const mainItem = indexPayload.items.find((item) => item.genId === "gen_smoke123");
     assert(mainItem, "Expected the primary fixture item to be present");
     assert.equal(mainItem.mediaUrl, "/media?id=gen_smoke123&kind=media");
@@ -506,6 +556,20 @@ async function run() {
     );
     assert.equal(userFilterPayload.items.length, 1, "Expected only the shared liked/user item to appear in custom user filter");
     assert.equal(userFilterPayload.items[0].genId, "gen_user999");
+
+    const charFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_char_@sparklecat")}`,
+      "Expected char source filter search to return 200",
+    );
+    assert.equal(charFilterPayload.items.length, 1, "Expected only the char local-only item to appear in char source filter");
+    assert.equal(charFilterPayload.items[0].genId, "gen_char111");
+
+    const charDraftFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_char_drafts_@sparklecat")}`,
+      "Expected char drafts filter search to return 200",
+    );
+    assert.equal(charDraftFilterPayload.items.length, 1, "Expected only the char draft local-only item to appear in char drafts filter");
+    assert.equal(charDraftFilterPayload.items[0].genId, "gen_chardraft111");
 
     const mergedFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=v2_profile,v2_liked`,

@@ -102,7 +102,7 @@ async function initViewerApp() {
 
   function applySourceFilter(source) {
     if (source === "all") {
-      state.filters.sources = [...viewer.SOURCE_ORDER];
+      state.filters.sources = [...viewer.filterableSources()];
     } else if (state.filters.sources.includes(source)) {
       if (state.filters.sources.length === 1) {
         viewer.syncNavChips();
@@ -119,9 +119,38 @@ async function initViewerApp() {
     void refresh();
   }
 
-  function applyCustomSourceToggle(enabled) {
-    const customSources = viewer.customSources();
-    if (!customSources.length) {
+  function applyCharGroupFilter(groupId) {
+    const group = viewer.charSourceGroups().find((entry) => entry.id === groupId);
+    if (!group?.sources.length) {
+      viewer.syncNavChips();
+      return;
+    }
+
+    const allSelected = group.sources.every((source) => state.filters.sources.includes(source));
+    if (allSelected) {
+      state.filters.sources = state.filters.sources.filter((source) => !group.sources.includes(source));
+      if (!state.filters.sources.length) {
+        const primarySources = viewer.primarySources();
+        state.filters.sources = primarySources.length ? [...primarySources] : [];
+      }
+    } else {
+      state.filters.sources = [...new Set([
+        ...state.filters.sources,
+        ...group.sources,
+      ])].sort(viewer.compareSources);
+    }
+
+    viewer.syncNavChips();
+    resetPagination();
+    viewer.clearDataCaches();
+    void refresh();
+  }
+
+  function applySourceGroupToggle(group, enabled) {
+    const groupSources = group === "chars"
+      ? viewer.charSources()
+      : viewer.customSources();
+    if (!groupSources.length) {
       viewer.syncNavChips();
       return;
     }
@@ -129,10 +158,10 @@ async function initViewerApp() {
     if (enabled) {
       state.filters.sources = [...new Set([
         ...state.filters.sources,
-        ...customSources,
+        ...groupSources,
       ])].sort(viewer.compareSources);
     } else {
-      state.filters.sources = state.filters.sources.filter((source) => !customSources.includes(source));
+      state.filters.sources = state.filters.sources.filter((source) => !groupSources.includes(source));
       if (!state.filters.sources.length) {
         const primarySources = viewer.primarySources();
         state.filters.sources = primarySources.length ? [...primarySources] : [];
@@ -166,7 +195,8 @@ async function initViewerApp() {
   }
 
   Object.assign(viewer, {
-    applyCustomSourceToggle,
+    applyCharGroupFilter,
+    applySourceGroupToggle,
     applySourceFilter,
     hideRebuildModal,
     refresh,
@@ -254,13 +284,18 @@ async function initViewerApp() {
   });
 
   els.topnav.addEventListener("change", (event) => {
-    const customToggle = event.target.closest('[data-role="custom-source-toggle"]');
-    if (customToggle) {
-      applyCustomSourceToggle(customToggle.checked);
+    const sourceGroupToggle = event.target.closest('[data-role="custom-sources-toggle"], [data-role="char-sources-toggle"]');
+    if (sourceGroupToggle) {
+      const group = sourceGroupToggle.getAttribute("data-role") === "char-sources-toggle" ? "chars" : "users";
+      applySourceGroupToggle(group, sourceGroupToggle.checked);
       return;
     }
     const checkbox = event.target.closest(".source-menu-checkbox");
     if (!checkbox) return;
+    if (checkbox.dataset.charGroup) {
+      applyCharGroupFilter(checkbox.dataset.charGroup);
+      return;
+    }
     applySourceFilter(checkbox.dataset.source);
   });
 

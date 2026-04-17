@@ -89,20 +89,73 @@ viewer.isCustomUserSource = function isCustomUserSource(source) {
   return /^v2_@/i.test(source || "");
 };
 
+viewer.isCharSource = function isCharSource(source) {
+  return /^v2_char(?:_drafts)?_@/i.test(source || "");
+};
+
+viewer.isCharDraftSource = function isCharDraftSource(source) {
+  return /^v2_char_drafts_@/i.test(source || "");
+};
+
+viewer.charSourceIdentity = function charSourceIdentity(source) {
+  if (viewer.isCharDraftSource(source)) {
+    return source.replace(/^v2_char_drafts_/i, "");
+  }
+  if (viewer.isCharSource(source)) {
+    return source.replace(/^v2_char_/i, "");
+  }
+  return "";
+};
+
 viewer.isPrimaryNavSource = function isPrimaryNavSource(source) {
   return ["v2_profile", "v2_liked", "v2_draft", "v2_drafts"].includes(source || "");
 };
 
 viewer.visibleSources = function visibleSources(sources = viewer.SOURCE_ORDER) {
-  return (sources || []).filter((source) => viewer.isPrimaryNavSource(source) || viewer.isCustomUserSource(source));
+  return (sources || []).filter((source) => {
+    return viewer.isPrimaryNavSource(source) || viewer.isCustomUserSource(source) || viewer.isCharSource(source);
+  });
+};
+
+viewer.filterableSources = function filterableSources(sources = viewer.SOURCE_ORDER) {
+  return viewer.visibleSources(sources);
 };
 
 viewer.primarySources = function primarySources(sources = viewer.SOURCE_ORDER) {
-  return viewer.visibleSources(sources).filter((source) => !viewer.isCustomUserSource(source));
+  return viewer.visibleSources(sources).filter((source) => {
+    return !viewer.isCustomUserSource(source) && !viewer.isCharSource(source);
+  });
 };
 
 viewer.customSources = function customSources(sources = viewer.SOURCE_ORDER) {
   return viewer.visibleSources(sources).filter((source) => viewer.isCustomUserSource(source));
+};
+
+viewer.charSources = function charSources(sources = viewer.SOURCE_ORDER) {
+  return viewer.visibleSources(sources).filter((source) => viewer.isCharSource(source));
+};
+
+viewer.charSourceGroups = function charSourceGroups(sources = viewer.SOURCE_ORDER) {
+  const groups = new Map();
+  for (const source of viewer.charSources(sources)) {
+    const identity = viewer.charSourceIdentity(source);
+    if (!identity) continue;
+    if (!groups.has(identity)) {
+      groups.set(identity, {
+        id: identity,
+        label: identity,
+        sources: [],
+      });
+    }
+    groups.get(identity).sources.push(source);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      sources: group.sources.sort(viewer.compareSources),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, "ja"));
 };
 
 viewer.compareSources = function compareSources(left, right) {
@@ -111,7 +164,10 @@ viewer.compareSources = function compareSources(left, right) {
   if (right === "v2_profile") return 1;
   const leftIsCustomUser = viewer.isCustomUserSource(left);
   const rightIsCustomUser = viewer.isCustomUserSource(right);
+  const leftIsChar = viewer.isCharSource(left);
+  const rightIsChar = viewer.isCharSource(right);
   if (leftIsCustomUser !== rightIsCustomUser) return leftIsCustomUser ? 1 : -1;
+  if (leftIsChar !== rightIsChar) return leftIsChar ? 1 : -1;
   return viewer.sourceDirectoryName(left).localeCompare(viewer.sourceDirectoryName(right), "ja");
 };
 
@@ -122,6 +178,8 @@ viewer.normalizeSources = function normalizeSources(sources) {
 viewer.sourceDisplayName = function sourceDisplayName(source) {
   if (source === "v2_profile") return "Profile";
   if (source === "v2_draft" || source === "v2_drafts") return "draft";
+  if (viewer.isCharDraftSource(source)) return `${viewer.charSourceIdentity(source)} drafts`;
+  if (viewer.isCharSource(source)) return viewer.charSourceIdentity(source);
   if (typeof source === "string" && source.startsWith("v2_")) {
     return source.slice(3);
   }
@@ -130,25 +188,27 @@ viewer.sourceDisplayName = function sourceDisplayName(source) {
 
 viewer.setAvailableSources = function setAvailableSources(sources) {
   const nextSources = viewer.normalizeSources(sources);
+  const nextFilterableSources = viewer.filterableSources(nextSources);
   const previousSources = viewer.SOURCE_ORDER;
+  const previousFilterableSources = viewer.filterableSources(previousSources);
   const hadAllSourcesSelected =
-    previousSources.length > 0
-    && previousSources.every((source) => viewer.state.filters.sources.includes(source));
+    previousFilterableSources.length > 0
+    && previousFilterableSources.every((source) => viewer.state.filters.sources.includes(source));
 
   viewer.SOURCE_ORDER = nextSources;
 
-  if (!nextSources.length) {
+  if (!nextFilterableSources.length) {
     viewer.state.filters.sources = [];
     return;
   }
 
   if (!viewer.state.filters.sources.length || hadAllSourcesSelected) {
-    viewer.state.filters.sources = [...nextSources];
+    viewer.state.filters.sources = [...nextFilterableSources];
     return;
   }
 
-  const nextSelectedSources = viewer.state.filters.sources.filter((source) => nextSources.includes(source));
-  viewer.state.filters.sources = nextSelectedSources.length ? nextSelectedSources : [...nextSources];
+  const nextSelectedSources = viewer.state.filters.sources.filter((source) => nextFilterableSources.includes(source));
+  viewer.state.filters.sources = nextSelectedSources.length ? nextSelectedSources : [...nextFilterableSources];
 };
 
 viewer.clearSearchDebounce = function clearSearchDebounce() {
