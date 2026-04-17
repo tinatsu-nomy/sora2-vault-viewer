@@ -89,12 +89,20 @@ viewer.isCustomUserSource = function isCustomUserSource(source) {
   return /^v2_@/i.test(source || "");
 };
 
+viewer.isPrimaryNavSource = function isPrimaryNavSource(source) {
+  return ["v2_profile", "v2_liked", "v2_draft", "v2_drafts"].includes(source || "");
+};
+
+viewer.visibleSources = function visibleSources(sources = viewer.SOURCE_ORDER) {
+  return (sources || []).filter((source) => viewer.isPrimaryNavSource(source) || viewer.isCustomUserSource(source));
+};
+
 viewer.primarySources = function primarySources(sources = viewer.SOURCE_ORDER) {
-  return (sources || []).filter((source) => !viewer.isCustomUserSource(source));
+  return viewer.visibleSources(sources).filter((source) => !viewer.isCustomUserSource(source));
 };
 
 viewer.customSources = function customSources(sources = viewer.SOURCE_ORDER) {
-  return (sources || []).filter((source) => viewer.isCustomUserSource(source));
+  return viewer.visibleSources(sources).filter((source) => viewer.isCustomUserSource(source));
 };
 
 viewer.compareSources = function compareSources(left, right) {

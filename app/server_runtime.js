@@ -30,9 +30,11 @@ const APP_DATA_DIR = process.env.SORA_APP_DATA_DIR
   : path.join(ROOT, "app", "data");
 const DB_PATH = process.env.SORA_SQLITE_PATH || path.join(APP_DATA_DIR, "sora-index.sqlite");
 const TXT_CACHE_PATH = path.join(APP_DATA_DIR, "txt-record-cache.json");
+const AVATAR_DIR = path.join(DATA_DIR, "avatars");
 const CONFIG_PATH = process.env.SORA_CONFIG_PATH
   ? path.resolve(process.env.SORA_CONFIG_PATH)
   : null;
+const AVATAR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".svg"];
 
 async function discoverSourceDirs(dataDir) {
   let entries = [];
@@ -153,6 +155,139 @@ async function pathPointsToFile(filePath) {
   }
 }
 
+function mimeTypeForExt(ext) {
+  switch (ext) {
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+      return "application/javascript; charset=utf-8";
+    case ".mp4":
+      return "video/mp4";
+    case ".txt":
+      return "text/plain; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".avif":
+      return "image/avif";
+    case ".bmp":
+      return "image/bmp";
+    case ".svg":
+      return "image/svg+xml; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function avatarIdentityForItem(item, role, requestedUsername) {
+  if (!item) return null;
+  if (role === "poster") {
+    const username = String(item.posterUsername || "").trim().replace(/^@+/, "");
+    return {
+      userId: item.profileUserId || null,
+      username: username || null,
+      ownerUsername: username || null,
+    };
+  }
+
+  if (role === "cameo") {
+    const normalizedUsername = String(requestedUsername || "").trim().replace(/^@+/, "");
+    const matchedProfile = (item.cameoProfiles || []).find((profile) => profile?.username === normalizedUsername);
+    const username = matchedProfile?.username || normalizedUsername || null;
+    return {
+      userId: matchedProfile?.userId || null,
+      username,
+      ownerUsername: username ? username.split(".")[0] : null,
+    };
+  }
+
+  return null;
+}
+
+function avatarSearchDirs(identity) {
+  const dirs = [];
+  if (identity?.ownerUsername) {
+    dirs.push(path.join(DATA_DIR, `sora_characters_@${identity.ownerUsername}`));
+  }
+
+  dirs.push(
+    path.join(AVATAR_DIR, "cameo"),
+    path.join(AVATAR_DIR, "users"),
+    path.join(AVATAR_DIR, "profiles"),
+    AVATAR_DIR,
+  );
+
+  return dirs;
+}
+
+function avatarCandidateNames(identity) {
+  const values = [identity?.userId, identity?.username, identity?.username ? `@${identity.username}` : null]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, allValues) => allValues.indexOf(value) === index)
+    .filter((value) => !/[\\/]/.test(value));
+
+  return values.flatMap((value) => AVATAR_EXTENSIONS.map((ext) => `${value}${ext}`));
+}
+
+async function resolveCharacterAvatarPath(identity, role) {
+  if (!identity?.ownerUsername) return null;
+  const baseDir = path.join(DATA_DIR, `sora_characters_@${identity.ownerUsername}`);
+  if (!isPathInside(DATA_DIR, baseDir)) return null;
+
+  let entries = [];
+  try {
+    entries = await fsp.readdir(baseDir, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+
+  const expectedStem = role === "poster"
+    ? `owner_${identity.ownerUsername}`
+    : `character_${identity.username}`;
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!AVATAR_EXTENSIONS.includes(ext)) continue;
+    const stem = path.basename(entry.name, ext);
+    if (stem === expectedStem || stem.startsWith(`${expectedStem}_`)) {
+      return path.join(baseDir, entry.name);
+    }
+  }
+
+  return null;
+}
+
+async function resolveAvatarPath(item, role, requestedUsername) {
+  const identity = avatarIdentityForItem(item, role, requestedUsername);
+  if (!identity) return null;
+
+  const characterAvatarPath = await resolveCharacterAvatarPath(identity, role);
+  if (characterAvatarPath) return characterAvatarPath;
+
+  const candidateNames = avatarCandidateNames(identity);
+  if (!candidateNames.length) return null;
+
+  for (const baseDir of avatarSearchDirs(identity)) {
+    for (const fileName of candidateNames) {
+      const filePath = path.join(baseDir, fileName);
+      const allowedRoot = isPathInside(AVATAR_DIR, filePath) ? AVATAR_DIR : DATA_DIR;
+      if (!isPathInside(allowedRoot, filePath)) continue;
+      if (await pathPointsToFile(filePath)) return filePath;
+    }
+  }
+
+  return null;
+}
+
 async function handleRequest(request, response) {
   try {
     const host = request.headers.host || `${BIND_HOST}:${DEFAULT_PORT}`;
@@ -191,6 +326,32 @@ async function handleRequest(request, response) {
       }
     }
 
+    if (url.pathname === "/avatar") {
+      const index = await getIndexForRead();
+      const itemId = decodeURIComponent(url.searchParams.get("id") || "");
+      const role = String(url.searchParams.get("role") || "poster").toLowerCase();
+      const requestedUsername = decodeURIComponent(url.searchParams.get("username") || "");
+      if (!itemId || !["poster", "cameo"].includes(role)) {
+        return json(response, 400, { error: "Invalid avatar request" });
+      }
+
+      const item = listingService.itemDetails(index, itemId);
+      if (!item) return json(response, 404, { error: "Item not found" });
+
+      const filePath = await resolveAvatarPath(item, role, requestedUsername);
+      if (!filePath) {
+        response.writeHead(404, {
+          "Cache-Control": "no-store, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        });
+        response.end();
+        return;
+      }
+
+      return sendFile(response, filePath, mimeTypeForExt(path.extname(filePath).toLowerCase()));
+    }
+
     if (url.pathname === "/media") {
       const index = await getIndexForRead();
       const itemId = decodeURIComponent(url.searchParams.get("id") || "");
@@ -200,10 +361,7 @@ async function handleRequest(request, response) {
         return json(response, 404, { error: "Media not found" });
       }
 
-      const ext = path.extname(filePath).toLowerCase();
-      const contentType =
-        ext === ".mp4" ? "video/mp4" : ext === ".txt" ? "text/plain; charset=utf-8" : "application/octet-stream";
-      return sendFile(response, filePath, contentType, {
+      return sendFile(response, filePath, mimeTypeForExt(path.extname(filePath).toLowerCase()), {
         "Content-Disposition": serializers.contentDispositionInline(filePath),
       });
     }
@@ -213,12 +371,7 @@ async function handleRequest(request, response) {
       : path.resolve(PUBLIC_DIR, `.${url.pathname}`);
     if (isPathInside(PUBLIC_DIR, assetPath) && await pathPointsToFile(assetPath)) {
       const ext = path.extname(assetPath).toLowerCase();
-      const contentType =
-        ext === ".css"
-          ? "text/css; charset=utf-8"
-          : ext === ".js"
-            ? "application/javascript; charset=utf-8"
-            : "text/html; charset=utf-8";
+      const contentType = ext === ".html" ? "text/html; charset=utf-8" : mimeTypeForExt(ext);
       return sendFile(response, assetPath, contentType);
     }
 

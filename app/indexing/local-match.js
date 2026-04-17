@@ -114,6 +114,35 @@ function usernamesForEntry(entry) {
   );
 }
 
+function extractMentionedUsernames(value) {
+  const matches = new Set();
+  const text = String(value || "");
+  for (const match of text.matchAll(/@([a-z0-9._-]+)/gi)) {
+    const username = normalizeUsername(match[1]);
+    if (username) matches.add(username);
+  }
+  return [...matches];
+}
+
+function localOwnerMetadata(source, localRecord) {
+  const posterUsername = sourceUsername(source) || null;
+  const cameoOwnerUsernames = extractMentionedUsernames(localRecord?.prompt || localRecord?.rawText || "")
+    .filter((username) => username && username !== posterUsername);
+  const cameoProfiles = cameoOwnerUsernames.map((username) => ({
+    username,
+    userId: null,
+  }));
+  const ownerUsernames = [posterUsername, ...cameoOwnerUsernames].filter(Boolean);
+
+  return {
+    posterUsername,
+    ownerUsername: ownerUsernames[0] || null,
+    ownerUsernames,
+    cameoOwnerUsernames,
+    cameoProfiles,
+  };
+}
+
 function sourceMatchesEntry(entry, localRecord) {
   const entryManifestSources = normalizeSourceMemberships(entry?.manifestSources || [entry?.manifestSource].filter(Boolean));
   const localDeclaredSource = localRecord?.declaredSource || null;
@@ -291,6 +320,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
         const unmatchedKey = localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem;
         const unmatchedId = `local:${unmatchedKey}`;
         const existingEntry = unmatchedLocals.get(unmatchedId);
+        const ownerMetadata = localOwnerMetadata(source, localRecord);
         if (existingEntry) {
           attachLocalVariant(existingEntry, source, localAttachmentForGroup(group, localRecord));
           existingEntry.date = existingEntry.date || localRecord.date;
@@ -299,6 +329,20 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
           existingEntry.duration = existingEntry.duration || localRecord.duration || null;
           existingEntry.isLiked = Boolean(existingEntry.isLiked || localRecord.liked === "yes");
           existingEntry.idTokens = [...new Set([...(existingEntry.idTokens || []), ...(localRecord.idTokens || [])])];
+          existingEntry.posterUsername = existingEntry.posterUsername || ownerMetadata.posterUsername;
+          existingEntry.ownerUsername = existingEntry.ownerUsername || ownerMetadata.ownerUsername;
+          existingEntry.ownerUsernames = [...new Set([...(existingEntry.ownerUsernames || []), ...(ownerMetadata.ownerUsernames || [])])];
+          existingEntry.cameoOwnerUsernames = [...new Set([...(existingEntry.cameoOwnerUsernames || []), ...(ownerMetadata.cameoOwnerUsernames || [])])];
+          existingEntry.cameoProfiles = [
+            ...new Map(
+              [
+                ...(existingEntry.cameoProfiles || []),
+                ...(ownerMetadata.cameoProfiles || []),
+              ]
+                .filter((profile) => profile?.username)
+                .map((profile) => [profile.username, profile]),
+            ).values(),
+          ];
           existingEntry.manifestSources = normalizeSourceMemberships([
             ...(existingEntry.manifestSources || []),
             localRecord.declaredSource || null,
@@ -327,6 +371,11 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
           height: null,
           ratio: localRecord.aspectRatio || null,
           duration: localRecord.duration || null,
+          posterUsername: ownerMetadata.posterUsername,
+          ownerUsername: ownerMetadata.ownerUsername,
+          ownerUsernames: ownerMetadata.ownerUsernames,
+          cameoOwnerUsernames: ownerMetadata.cameoOwnerUsernames,
+          cameoProfiles: ownerMetadata.cameoProfiles,
           isLiked: localRecord.liked === "yes",
           previewUrl: null,
           downloadUrl: null,

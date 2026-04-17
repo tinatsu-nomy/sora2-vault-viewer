@@ -68,6 +68,60 @@ function formatCameoUsernames(item) {
   return usernames.map((username) => `@${username}`).join(", ");
 }
 
+function avatarUrlForItem(item, role, username = "") {
+  if (!item?.id) return "";
+  const params = new URLSearchParams({
+    id: item.id,
+    role,
+  });
+  if (username) params.set("username", username);
+  return `/avatar?${params.toString()}`;
+}
+
+function avatarDotMarkup(url) {
+  const imageUrl = url || "/avatar-fallback.svg";
+  return `
+    <span class="avatar-dot" aria-hidden="true">
+      <img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/avatar-fallback.svg'">
+    </span>
+  `;
+}
+
+function userInlineMarkup(label, url) {
+  return `
+    <span class="user-inline">
+      ${avatarDotMarkup(url)}
+      <span>${escapeHtml(label)}</span>
+    </span>
+  `;
+}
+
+function cameoEntries(item) {
+  if (item?.cameoProfiles?.length) {
+    return item.cameoProfiles
+      .filter((profile) => profile?.username)
+      .map((profile) => ({
+        username: profile.username,
+        userId: profile.userId || null,
+      }));
+  }
+
+  return (item?.cameoOwnerUsernames || [])
+    .filter(Boolean)
+    .map((username) => ({
+      username,
+      userId: null,
+    }));
+}
+
+function cameoInlineMarkup(item) {
+  const entries = cameoEntries(item);
+  if (!entries.length) return "";
+  return entries
+    .map((entry) => userInlineMarkup(`@${entry.username}`, avatarUrlForItem(item, "cameo", entry.username)))
+    .join("");
+}
+
 function sourceLabel(source) {
   if (!source) return "unknown";
   if (source === "v2_profile") return "profile";
@@ -145,7 +199,8 @@ function metadataRatioText(item) {
 
 function syncNavChips() {
   const selectedSources = new Set(state.filters.sources);
-  const allSelected = viewer.SOURCE_ORDER.every((source) => selectedSources.has(source));
+  const visibleSources = viewer.visibleSources();
+  const allSelected = visibleSources.every((source) => selectedSources.has(source));
 
   for (const chip of navChips()) {
     const chipSource = chip.dataset.source;
@@ -154,7 +209,7 @@ function syncNavChips() {
     chip.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
 
-  const customSources = viewer.customSources();
+  const customSources = viewer.customSources(visibleSources);
   const selectedCustomSources = customSources.filter((source) => selectedSources.has(source));
   const customSourceMenu = els.topnav?.querySelector('[data-role="custom-sources"]');
   const customSourceSummary = customSourceMenu?.querySelector(".source-menu-summary");
@@ -525,6 +580,9 @@ function renderList() {
       const localMediaUrl = item.mediaUrl || null;
       const posterUsername = formatPosterUsername(item);
       const cameoUsernames = formatCameoUsernames(item);
+      const posterLabel = posterUsername
+        ? userInlineMarkup(`posted by ${posterUsername}`, avatarUrlForItem(item, "poster"))
+        : "";
       const sourceBadges = sourceLabelsForItem(item)
         .map((label) => `<span class="badge">${escapeHtml(label)}</span>`)
         .join("");
@@ -554,7 +612,7 @@ function renderList() {
               <div class="meta-row">
                 ${item.date ? `<span class="meta-pill">${escapeHtml(item.date)}</span>` : ""}
                 ${item.duration ? `<span class="meta-pill">${escapeHtml(String(item.duration))}s</span>` : ""}
-                ${posterUsername ? `<span class="meta-pill">posted by ${escapeHtml(posterUsername)}</span>` : ""}
+                ${posterLabel ? `<span class="meta-pill">${posterLabel}</span>` : ""}
                 ${state.filters.showCameo && cameoUsernames ? `<span class="meta-pill">cameo ${escapeHtml(cameoUsernames)}</span>` : ""}
               </div>
               <div class="card-links">
@@ -688,9 +746,11 @@ async function renderDetail() {
   const localMediaUrl = item.mediaUrl || null;
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
+  const posterInline = posterUsername ? userInlineMarkup(posterUsername, avatarUrlForItem(item, "poster")) : "";
+  const cameoInline = cameoInlineMarkup(item);
   const summaryChips = [
     item.date ? `<span class="detail-chip">${escapeHtml(item.date)}</span>` : "",
-    posterUsername ? `<span class="detail-chip accent">posted by ${escapeHtml(posterUsername)}</span>` : "",
+    posterUsername ? `<span class="detail-chip accent">${userInlineMarkup(`posted by ${posterUsername}`, avatarUrlForItem(item, "poster"))}</span>` : "",
     typeof item.likeCount === "number" ? `<span class="detail-chip">♥ ${escapeHtml(item.likeCount)}</span>` : "",
     typeof item.viewCount === "number" ? `<span class="detail-chip">◉ ${escapeHtml(item.viewCount)}</span>` : "",
   ]
@@ -736,8 +796,8 @@ async function renderDetail() {
       <div class="detail-grid">
         <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceSummary)}</strong></div>
         <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row"><span>posted by</span><strong>${escapeHtml(posterUsername)}</strong></div>
-        ${state.filters.showCameo ? `<div class="detail-row"><span>cameo</span><strong>${escapeHtml(cameoUsernames)}</strong></div>` : ""}
+        <div class="detail-row"><span>posted by</span><strong>${posterInline}</strong></div>
+        ${state.filters.showCameo ? `<div class="detail-row"><span>cameo</span><strong class="detail-user-list">${cameoInline || escapeHtml(cameoUsernames)}</strong></div>` : ""}
         <div class="detail-row"><span>♥</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
         <div class="detail-row"><span>◉</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
