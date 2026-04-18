@@ -308,6 +308,16 @@ viewer.sourceDirectoryName = function sourceDirectoryName(source) {
   return source;
 };
 
+viewer.PRIMARY_NAV_SOURCES = [
+  "v2_profile",
+  "v2_liked",
+  "v2_cameos",
+  "v2_draft",
+  "v2_drafts",
+  "v2_cameos_draft",
+  "v2_cameo_drafts",
+];
+
 viewer.isCustomUserSource = function isCustomUserSource(source) {
   return /^v2_@/i.test(source || "");
 };
@@ -331,7 +341,7 @@ viewer.charSourceIdentity = function charSourceIdentity(source) {
 };
 
 viewer.isPrimaryNavSource = function isPrimaryNavSource(source) {
-  return ["v2_profile", "v2_liked", "v2_draft", "v2_drafts"].includes(source || "");
+  return viewer.PRIMARY_NAV_SOURCES.includes(source || "");
 };
 
 viewer.visibleSources = function visibleSources(sources = viewer.SOURCE_ORDER) {
@@ -401,6 +411,8 @@ viewer.normalizeSources = function normalizeSources(sources) {
 viewer.sourceDisplayName = function sourceDisplayName(source) {
   if (source === "v2_profile") return "Profile";
   if (source === "v2_draft" || source === "v2_drafts") return "draft";
+  if (source === "v2_cameos") return "cameos";
+  if (source === "v2_cameos_draft" || source === "v2_cameo_drafts") return "cameos drafts";
   if (viewer.isCharDraftSource(source)) return `${viewer.charSourceIdentity(source)} drafts`;
   if (viewer.isCharSource(source)) return viewer.charSourceIdentity(source);
   if (typeof source === "string" && source.startsWith("v2_")) {

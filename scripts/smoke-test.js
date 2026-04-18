@@ -10,6 +10,8 @@ const TMP_ROOT = fs.mkdtempSync(path.join(TMP_PARENT, "sora2-viewer-smoke-"));
 const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
 const LIKED_DIR = path.join(DATA_DIR, "sora_v2_liked");
+const CAMEOS_DIR = path.join(DATA_DIR, "sora_v2_cameos");
+const CAMEOS_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_cameo_drafts");
 const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
 const CHAR_DIR = path.join(DATA_DIR, "sora_v2_char_@sparklecat");
 const CHAR_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_char_drafts_@sparklecat");
@@ -37,6 +39,8 @@ function loadStartServer({ dbPath } = {}) {
 function writeFixtureData() {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   fs.mkdirSync(LIKED_DIR, { recursive: true });
+  fs.mkdirSync(CAMEOS_DIR, { recursive: true });
+  fs.mkdirSync(CAMEOS_DRAFT_DIR, { recursive: true });
   fs.mkdirSync(USER_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
@@ -241,6 +245,50 @@ function writeFixtureData() {
   );
 
   fs.writeFileSync(
+    path.join(CAMEOS_DIR, "2026-04-09_gen_cameo111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(CAMEOS_DIR, "2026-04-09_gen_cameo111.txt"),
+    [
+      "Source: v2_cameos",
+      "Generation ID: gen_cameo111",
+      "Task ID: task_cameo111",
+      "Post ID: s_cameo111",
+      "Date: 2026-04-09",
+      "Duration: 8",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Cameos source prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.txt"),
+    [
+      "Source: v2_cameo_drafts",
+      "Generation ID: gen_cameodraft111",
+      "Task ID: task_cameodraft111",
+      "Post ID: s_cameodraft111",
+      "Date: 2026-04-08",
+      "Duration: 3",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Cameos drafts prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
     path.join(USER_DIR, "2026-04-10_gen_user999.mp4"),
     Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
   );
@@ -438,7 +486,7 @@ async function assertRestartRefreshesCachedIndex() {
   try {
     await waitForServer(firstServer);
     const firstPayload = await fetchIndexPayload(PORT);
-    assert.equal(firstPayload.stats.totalItems, 8, "Expected initial startup to index the fixture manifest and local-only char sources");
+    assert.equal(firstPayload.stats.totalItems, 10, "Expected initial startup to index the fixture manifest and local-only char/cameos sources");
   } finally {
     await new Promise((resolve) => firstServer.close(resolve));
   }
@@ -451,11 +499,11 @@ async function assertRestartRefreshesCachedIndex() {
     await waitForServer(secondServer);
     const immediatePayload = await fetchIndexPayload(PORT);
     assert.equal(
-      [8, 9].includes(immediatePayload.stats.totalItems),
+      [10, 11].includes(immediatePayload.stats.totalItems),
       true,
       "Expected restart to return either the cached index immediately or the refreshed index if rebuilding already finished",
     );
-    if (immediatePayload.stats.totalItems === 8) {
+    if (immediatePayload.stats.totalItems === 10) {
       assert.equal(
         immediatePayload.indexStatus?.isRefreshing,
         true,
@@ -465,7 +513,7 @@ async function assertRestartRefreshesCachedIndex() {
 
     const secondPayload = await waitForCondition(async () => {
       const payload = await fetchIndexPayload(PORT);
-      return payload.stats.totalItems === 9 ? payload : null;
+      return payload.stats.totalItems === 11 ? payload : null;
     });
     assert(
       secondPayload.items.some((item) => item.genId === "gen_after_restart"),
@@ -487,10 +535,12 @@ async function run() {
     await waitForServer(server);
 
     const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
-    assert.equal(indexPayload.items.length, 9, "Expected all manifest and local-only fixture items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 9, "Expected stats to report all indexed items");
-    assert.equal(indexPayload.stats.withLocalMedia, 4, "Expected merged items plus char sources to match local media pairs");
+    assert.equal(indexPayload.items.length, 11, "Expected all manifest and local-only fixture items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 11, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.stats.withLocalMedia, 6, "Expected merged items plus char and cameos sources to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
+    assert(indexPayload.stats.sourceOrder.includes("v2_cameos"), "Expected cameos sources to be included in source order");
+    assert(indexPayload.stats.sourceOrder.includes("v2_cameo_drafts"), "Expected cameos draft sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_@sparklecat"), "Expected char sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_drafts_@sparklecat"), "Expected char draft sources to be included in source order");
     const mainItem = indexPayload.items.find((item) => item.genId === "gen_smoke123");
@@ -571,6 +621,20 @@ async function run() {
     );
     assert.equal(charDraftFilterPayload.items.length, 1, "Expected only the char draft local-only item to appear in char drafts filter");
     assert.equal(charDraftFilterPayload.items[0].genId, "gen_chardraft111");
+
+    const cameosFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_cameos`,
+      "Expected cameos filter search to return 200",
+    );
+    assert.equal(cameosFilterPayload.items.length, 1, "Expected only the cameos local-only item to appear in cameos filter");
+    assert.equal(cameosFilterPayload.items[0].genId, "gen_cameo111");
+
+    const cameosDraftFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_cameo_drafts`,
+      "Expected cameos drafts filter search to return 200",
+    );
+    assert.equal(cameosDraftFilterPayload.items.length, 1, "Expected only the cameos draft local-only item to appear in cameos drafts filter");
+    assert.equal(cameosDraftFilterPayload.items[0].genId, "gen_cameodraft111");
 
     const mergedFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=v2_profile,v2_liked`,

@@ -143,6 +143,8 @@ function sourceLabel(source) {
   if (!source) return "unknown";
   if (source === "v2_profile") return "profile";
   if (source === "v2_draft" || source === "v2_drafts") return "draft";
+  if (source === "v2_cameos") return "cameos";
+  if (source === "v2_cameos_draft" || source === "v2_cameo_drafts") return "cameos drafts";
   return viewer.sourceDirectoryName(source) || source;
 }
 
