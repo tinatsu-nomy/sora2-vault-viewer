@@ -20,6 +20,7 @@
   "build": {
     "appId": "local.sora2.vault-viewer",
     "productName": "Sora2 Vault Viewer",
+    "icon": "electron/assets/icon.png",
     "directories": {
       "output": "dist-electron"
     },
@@ -37,6 +38,7 @@
       "main": "electron/main.js"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "portable"
       ],

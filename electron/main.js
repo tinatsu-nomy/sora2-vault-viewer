@@ -4,6 +4,7 @@ const { app, BrowserWindow, dialog, shell } = require("electron");
 
 const ROOT = path.resolve(__dirname, "..");
 const CONFIG_VERSION = 1;
+const APP_ICON_PATH = path.join(ROOT, "electron", "assets", "icon.png");
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.setAppUserModelId("local.sora2.vault-viewer");
@@ -134,6 +135,7 @@ async function createMainWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#040404",
+    icon: APP_ICON_PATH,
     title: "Sora2 Vault Viewer",
     webPreferences: {
       contextIsolation: true,
