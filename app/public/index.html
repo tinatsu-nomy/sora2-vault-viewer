@@ -110,26 +110,36 @@
       </section>
 
       <main class="content">
-        <section class="gallery-section">
+        <section class="gallery-section is-loading" aria-busy="true" data-loading-label="Loading library...">
           <div class="section-head">
             <div>
               <h2>Local Feed</h2>
               <p class="subtle">Local `mp4` files play directly inside the grid cards</p>
             </div>
-            <p id="resultMeta" class="subtle"></p>
+            <p id="resultMeta" class="subtle">Loading items...</p>
           </div>
-          <div id="list" class="gallery-grid"></div>
+          <div id="list" class="gallery-grid">
+            <article class="empty-state loading-state">
+              <strong>Loading your local library</strong>
+              <div class="subtle">Scanning manifests, matching local files, and preparing the first page.</div>
+            </article>
+          </div>
           <div id="pagination" class="pagination"></div>
         </section>
 
-        <aside class="detail-section panel">
+        <aside class="detail-section panel is-loading" aria-busy="true" data-loading-label="Loading details...">
           <div class="section-head">
             <div>
               <h2>Details</h2>
               <p class="subtle">Details for the selected item</p>
             </div>
           </div>
-          <div id="detail" class="detail empty">Select a card to see more details here.</div>
+          <div id="detail" class="detail empty">
+            <article class="detail-card loading-card">
+              <h3>Preparing details</h3>
+              <div class="subtle">The first selected item will appear here as soon as indexing finishes.</div>
+            </article>
+          </div>
         </aside>
       </main>
 
