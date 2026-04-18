@@ -4,6 +4,7 @@ const http = require("http");
 const { URL } = require("url");
 
 const { buildIndex } = require("./indexer");
+const { classifyDirEntry } = require("./fs-utils");
 const { compareSourceKeys } = require("./indexing/common");
 const { createStore } = require("./store");
 const { createSerializers } = require("./http/serializers");
@@ -46,10 +47,11 @@ async function discoverSourceDirs(dataDir) {
 
   const sourceDirs = {};
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    const resolvedEntry = await classifyDirEntry(dataDir, entry);
+    if (resolvedEntry.type !== "directory") continue;
     if (!/^sora_v2_.+/i.test(entry.name)) continue;
     const sourceKey = entry.name.replace(/^sora_/i, "");
-    sourceDirs[sourceKey] = path.join(dataDir, entry.name);
+    sourceDirs[sourceKey] = resolvedEntry.path;
   }
 
   return sourceDirs;

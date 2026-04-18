@@ -8,10 +8,13 @@ const TMP_PARENT = path.join(ROOT, ".tmp");
 fs.mkdirSync(TMP_PARENT, { recursive: true });
 const TMP_ROOT = fs.mkdtempSync(path.join(TMP_PARENT, "sora2-viewer-smoke-"));
 const DATA_DIR = path.join(TMP_ROOT, "sora2_data");
+const LINK_TARGETS_DIR = path.join(TMP_ROOT, "linked-data");
 const PROFILE_DIR = path.join(DATA_DIR, "sora_v2_profile");
 const LIKED_DIR = path.join(DATA_DIR, "sora_v2_liked");
 const CAMEOS_DIR = path.join(DATA_DIR, "sora_v2_cameos");
 const CAMEOS_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_cameo_drafts");
+const REAL_CAMEOS_DIR = path.join(LINK_TARGETS_DIR, "sora_v2_cameos");
+const REAL_CAMEOS_DRAFT_DIR = path.join(LINK_TARGETS_DIR, "sora_v2_cameo_drafts");
 const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
 const CHAR_DIR = path.join(DATA_DIR, "sora_v2_char_@sparklecat");
 const CHAR_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_char_drafts_@sparklecat");
@@ -36,11 +39,19 @@ function loadStartServer({ dbPath } = {}) {
   return require(serverPath).startServer;
 }
 
+function createDirectoryLink(targetDir, linkPath) {
+  fs.symlinkSync(targetDir, linkPath, process.platform === "win32" ? "junction" : "dir");
+}
+
 function writeFixtureData() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(LINK_TARGETS_DIR, { recursive: true });
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
   fs.mkdirSync(LIKED_DIR, { recursive: true });
-  fs.mkdirSync(CAMEOS_DIR, { recursive: true });
-  fs.mkdirSync(CAMEOS_DRAFT_DIR, { recursive: true });
+  fs.mkdirSync(REAL_CAMEOS_DIR, { recursive: true });
+  fs.mkdirSync(REAL_CAMEOS_DRAFT_DIR, { recursive: true });
+  createDirectoryLink(REAL_CAMEOS_DIR, CAMEOS_DIR);
+  createDirectoryLink(REAL_CAMEOS_DRAFT_DIR, CAMEOS_DRAFT_DIR);
   fs.mkdirSync(USER_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
@@ -245,11 +256,11 @@ function writeFixtureData() {
   );
 
   fs.writeFileSync(
-    path.join(CAMEOS_DIR, "2026-04-09_gen_cameo111.mp4"),
+    path.join(REAL_CAMEOS_DIR, "2026-04-09_gen_cameo111.mp4"),
     Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
   );
   fs.writeFileSync(
-    path.join(CAMEOS_DIR, "2026-04-09_gen_cameo111.txt"),
+    path.join(REAL_CAMEOS_DIR, "2026-04-09_gen_cameo111.txt"),
     [
       "Source: v2_cameos",
       "Generation ID: gen_cameo111",
@@ -267,11 +278,11 @@ function writeFixtureData() {
   );
 
   fs.writeFileSync(
-    path.join(CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.mp4"),
+    path.join(REAL_CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.mp4"),
     Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
   );
   fs.writeFileSync(
-    path.join(CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.txt"),
+    path.join(REAL_CAMEOS_DRAFT_DIR, "2026-04-08_gen_cameodraft111.txt"),
     [
       "Source: v2_cameo_drafts",
       "Generation ID: gen_cameodraft111",

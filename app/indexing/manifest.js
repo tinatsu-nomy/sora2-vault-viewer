@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
+const { classifyDirEntry } = require("../fs-utils");
 const { extractIdTokens } = require("./common");
 
 const fsp = fs.promises;
@@ -15,15 +16,16 @@ function isSupportedManifestFileName(fileName) {
 async function listManifestFiles(dataDir) {
   try {
     const entries = await fsp.readdir(dataDir, { withFileTypes: true });
-    return entries
-      .filter((entry) => {
-        if (!entry.isFile()) return false;
-        const ext = path.extname(entry.name).toLowerCase();
-        if (ext !== ".json") return false;
-        return isSupportedManifestFileName(entry.name);
-      })
-      .map((entry) => path.join(dataDir, entry.name))
-      .sort();
+    const manifestPaths = [];
+    for (const entry of entries) {
+      const resolvedEntry = await classifyDirEntry(dataDir, entry);
+      if (resolvedEntry.type !== "file") continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (ext !== ".json") continue;
+      if (!isSupportedManifestFileName(entry.name)) continue;
+      manifestPaths.push(resolvedEntry.path);
+    }
+    return manifestPaths.sort();
   } catch (error) {
     if (error && error.code === "ENOENT") return [];
     throw error;

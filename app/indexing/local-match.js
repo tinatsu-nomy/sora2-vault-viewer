@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
+const { classifyDirEntry, realPathKey } = require("../fs-utils");
 const {
   basenameWithoutExt,
   compareSourceKeys,
@@ -19,9 +20,13 @@ async function walkFiles(dirPath) {
 
   const results = [];
   const stack = [dirPath];
+  const visitedDirs = new Set();
 
   while (stack.length) {
     const current = stack.pop();
+    const currentKey = await realPathKey(current);
+    if (!currentKey || visitedDirs.has(currentKey)) continue;
+    visitedDirs.add(currentKey);
     let entries;
     try {
       entries = await fsp.readdir(current, { withFileTypes: true });
@@ -31,11 +36,11 @@ async function walkFiles(dirPath) {
     }
 
     for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-      } else if (entry.isFile()) {
-        results.push(fullPath);
+      const resolvedEntry = await classifyDirEntry(current, entry);
+      if (resolvedEntry.type === "directory") {
+        stack.push(resolvedEntry.path);
+      } else if (resolvedEntry.type === "file") {
+        results.push(resolvedEntry.path);
       }
     }
   }
