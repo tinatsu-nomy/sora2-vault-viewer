@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.5
+
+### Source Handling And Indexing
+
+- Added source filters for `sora_v2_cameos` and `sora_v2_cameo_drafts`
+- Added grouped `Users` and `Chars` source menus and hid those menus when there are no matching sources
+- Added support for merged manifest parts and merged source memberships across manifest and local matches
+- Added support for symlinked and junction-backed source directories and manifest files inside `sora2_data/`
+- Added persisted viewer state so query, filters, page size, selected item, and paging survive reloads
+
+### UI And Detail View
+
+- Refined the gallery and detail layout for denser desktop viewing
+- Added a visible initial loading state so the first index load is not blank while manifests and local files are being scanned
+- Added cameo and profile user IDs to the detail panel when available
+- Added local avatar lookup for posters and cameo users, including improved fallback owner lookup for cameo avatars
+
+### Documentation And Release Assets
+
+- Refreshed the README screenshot for the `v0.2.5` release
+- Added the data directory settings example image to the README
+- Updated the README release links and data layout examples for `v0.2.5`
+
 ## v0.2.4
 
 ### Security And Dependencies
