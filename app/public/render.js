@@ -223,6 +223,7 @@ function charSourceMenuMarkup(groups) {
 
 function renderSourceNav() {
   if (!els.topnav) return;
+  const populatedSources = viewer.normalizeSources(state.stats?.sources || []);
 
   const primarySourceButtons = viewer.primarySources()
     .map((source) => `
@@ -230,13 +231,13 @@ function renderSourceNav() {
     `)
     .join("");
   const customSourceMenu = sourceMenuMarkup({
-    sources: viewer.customSources(),
+    sources: viewer.customSources(populatedSources),
     menuRole: "custom-sources",
     summaryLabel: "Users",
     title: "User sources",
     toggleLabel: "Enable all users",
   });
-  const charSourceMenu = charSourceMenuMarkup(viewer.charSourceGroups());
+  const charSourceMenu = charSourceMenuMarkup(viewer.charSourceGroups(populatedSources));
 
   els.topnav.innerHTML = `
     <button type="button" class="nav-chip" data-source="all">All</button>
@@ -263,6 +264,7 @@ function metadataRatioText(item) {
 function syncNavChips() {
   const selectedSources = new Set(state.filters.sources);
   const visibleSources = viewer.visibleSources();
+  const populatedSources = viewer.normalizeSources(state.stats?.sources || []);
   const allSelected = visibleSources.every((source) => selectedSources.has(source));
 
   for (const chip of navChips()) {
@@ -274,7 +276,7 @@ function syncNavChips() {
 
   for (const checkbox of els.topnav?.querySelectorAll(".source-menu-checkbox") || []) {
     if (checkbox.dataset.charGroup) {
-      const group = viewer.charSourceGroups(visibleSources).find((entry) => entry.id === checkbox.dataset.charGroup);
+      const group = viewer.charSourceGroups(populatedSources).find((entry) => entry.id === checkbox.dataset.charGroup);
       const selectedCount = group ? group.sources.filter((source) => selectedSources.has(source)).length : 0;
       checkbox.checked = Boolean(group?.sources.length) && selectedCount === group.sources.length;
       checkbox.indeterminate = selectedCount > 0 && selectedCount < (group?.sources.length || 0);
@@ -287,12 +289,12 @@ function syncNavChips() {
     {
       menuRole: "custom-sources",
       summaryLabel: "Users",
-      sources: viewer.customSources(visibleSources),
+      sources: viewer.customSources(populatedSources),
     },
     {
       menuRole: "char-sources",
       summaryLabel: "Chars",
-      sources: viewer.charSourceGroups(visibleSources),
+      sources: viewer.charSourceGroups(populatedSources),
     },
   ];
 
