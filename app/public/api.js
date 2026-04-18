@@ -65,6 +65,7 @@ function applyIndexPayload(payload) {
     state.selectedId = state.items[0]?.id || null;
   }
   viewer.updateActiveCard();
+  viewer.persistViewState();
 }
 
 async function prefetchIndexPage(queryString) {

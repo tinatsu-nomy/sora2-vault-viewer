@@ -377,6 +377,7 @@ function renderIndexError(message) {
   `;
   els.pagination.innerHTML = "";
   els.detail.innerHTML = "Fix the manifest/index issue and try Rescan again.";
+  viewer.persistViewState();
 }
 
 function renderIndexStatus() {
@@ -659,6 +660,7 @@ async function selectGalleryItem(id) {
   state.selectedId = id;
   updateActiveCard();
   await viewer.renderDetail();
+  viewer.persistViewState();
 }
 
 async function focusAndSelectButton(button) {
@@ -836,6 +838,7 @@ async function renderDetail() {
   if (!state.selectedId) {
     viewer.setSectionLoading(els.detailSection, false);
     els.detail.innerHTML = "Select a card to see its details here.";
+    viewer.persistViewState();
     return;
   }
 

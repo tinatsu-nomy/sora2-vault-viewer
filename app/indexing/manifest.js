@@ -4,6 +4,13 @@ const path = require("path");
 const { extractIdTokens } = require("./common");
 
 const fsp = fs.promises;
+const MERGED_MANIFEST_FILE_RE = /^soravault_manifest_merged_\d{4}-\d{2}-\d{2}_\d{6}_part\d+\.json$/i;
+const LEGACY_MANIFEST_FILE_RE = /^soravault_manifest_.+\.json$/i;
+
+function isSupportedManifestFileName(fileName) {
+  const name = String(fileName || "");
+  return MERGED_MANIFEST_FILE_RE.test(name) || LEGACY_MANIFEST_FILE_RE.test(name);
+}
 
 async function listManifestFiles(dataDir) {
   try {
@@ -13,7 +20,7 @@ async function listManifestFiles(dataDir) {
         if (!entry.isFile()) return false;
         const ext = path.extname(entry.name).toLowerCase();
         if (ext !== ".json") return false;
-        return entry.name.toLowerCase().startsWith("soravault_manifest_");
+        return isSupportedManifestFileName(entry.name);
       })
       .map((entry) => path.join(dataDir, entry.name))
       .sort();
@@ -186,6 +193,7 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
 }
 
 module.exports = {
+  isSupportedManifestFileName,
   buildManifestSearchText,
   listManifestFiles,
   manifestDedupeKeyFromItem,

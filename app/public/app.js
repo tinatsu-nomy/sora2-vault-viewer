@@ -61,6 +61,7 @@ async function initViewerApp() {
   await ensureViewerModules();
   if (viewer.__appInitialized) return;
   viewer.__appInitialized = true;
+  viewer.restoreViewState();
 
   const { state, els } = viewer;
 
@@ -87,6 +88,7 @@ async function initViewerApp() {
 
   async function refresh() {
     syncFiltersFromForm();
+    viewer.persistViewState();
     await viewer.fetchIndex({ reason: "search" });
   }
 
@@ -312,6 +314,7 @@ async function initViewerApp() {
     viewer.renderList();
     viewer.renderPagination();
     await viewer.renderDetail();
+    viewer.persistViewState();
   });
 
   els.rebuildButton.addEventListener("click", async () => {
@@ -355,6 +358,7 @@ async function initViewerApp() {
     }
   });
 
+  viewer.syncFormFromState();
   updateDateResetButton();
   viewer.renderSourceNav();
   viewer.syncNavChips();

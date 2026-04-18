@@ -15,6 +15,7 @@ const CHAR_DIR = path.join(DATA_DIR, "sora_v2_char_@sparklecat");
 const CHAR_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_char_drafts_@sparklecat");
 const CHARACTER_DIR = path.join(DATA_DIR, "sora_characters_@smoke_user");
 const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
+const MANIFEST_FILE_NAME = "soravault_manifest_merged_2026-04-18_102546_part01.json";
 const PORT = 33210;
 const RETRY_PORT = 33230;
 
@@ -212,7 +213,7 @@ function writeFixtureData() {
   };
 
   fs.writeFileSync(
-    path.join(DATA_DIR, "soravault_manifest_smoke.json"),
+    path.join(DATA_DIR, MANIFEST_FILE_NAME),
     JSON.stringify(manifest, null, 2),
     "utf8",
   );
@@ -312,7 +313,7 @@ function writeFixtureData() {
 }
 
 function appendRestartFixtureData() {
-  const manifestPath = path.join(DATA_DIR, "soravault_manifest_smoke.json");
+  const manifestPath = path.join(DATA_DIR, MANIFEST_FILE_NAME);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.total += 1;
   manifest.items.push({
