@@ -124,6 +124,10 @@ Distribution:
 }
 ```
 
+- Example settings screen for configuring the data directory:
+
+![Example download settings screen](docs/SoraVault_Download_setting.png)
+
 - Windows may show SmartScreen or other security prompts for unsigned executables
 
 Uninstalling the portable Windows app:
