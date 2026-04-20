@@ -422,14 +422,17 @@ function waitForServer(server, { rejectOnError = true } = {}) {
   });
 }
 
-function request(url) {
+function request(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.get(url, {
+    const requestOptions = {
+      method: options.method || "GET",
       agent: false,
       headers: {
         Connection: "close",
+        ...(options.headers || {}),
       },
-    }, (response) => {
+    };
+    const req = http.request(url, requestOptions, (response) => {
       const chunks = [];
       response.on("data", (chunk) => {
         chunks.push(chunk);
@@ -443,6 +446,10 @@ function request(url) {
     });
 
     req.on("error", reject);
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
   });
 }
 
@@ -489,7 +496,7 @@ async function assertPortRetryWorks() {
   }
 }
 
-async function assertRestartRefreshesCachedIndex() {
+async function assertRestartUsesCachedIndexUntilRebuild() {
   const restartDbPath = path.join(TMP_ROOT, "restart.sqlite");
   const firstStartServer = loadStartServer({ dbPath: restartDbPath });
   const firstServer = firstStartServer(PORT);
@@ -512,15 +519,18 @@ async function assertRestartRefreshesCachedIndex() {
     assert.equal(
       [10, 11].includes(immediatePayload.stats.totalItems),
       true,
-      "Expected restart to return either the cached index immediately or the refreshed index if rebuilding already finished",
+      "Expected restart to return either the cached index or a fully rebuilt index",
     );
     if (immediatePayload.stats.totalItems === 10) {
       assert.equal(
         immediatePayload.indexStatus?.isRefreshing,
-        true,
-        "Expected cached restart response to advertise background refresh activity",
+        false,
+        "Expected cached restart response to avoid automatic background refresh",
       );
     }
+
+    const rebuildResponse = await request(`http://127.0.0.1:${PORT}/api/rebuild`, { method: "POST" });
+    assert.equal(rebuildResponse.status, 200, "Expected /api/rebuild to return 200 after restart");
 
     const secondPayload = await waitForCondition(async () => {
       const payload = await fetchIndexPayload(PORT);
@@ -538,7 +548,7 @@ async function assertRestartRefreshesCachedIndex() {
 async function run() {
   writeFixtureData();
   await assertPortRetryWorks();
-  await assertRestartRefreshesCachedIndex();
+  await assertRestartUsesCachedIndexUntilRebuild();
   const startServer = loadStartServer({ dbPath: path.join(TMP_ROOT, "main.sqlite") });
   const server = startServer(PORT);
 
