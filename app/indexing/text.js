@@ -12,7 +12,7 @@ const TEXT_DECODERS = [
   { name: "utf-8", decoder: new TextDecoder("utf-8", { fatal: false }) },
   { name: "shift_jis", decoder: new TextDecoder("shift_jis", { fatal: false }) },
 ];
-const TXT_RECORD_CACHE_VERSION = 1;
+const TXT_RECORD_CACHE_VERSION = 2;
 
 function cloneTxtRecord(record) {
   if (!record) return null;
@@ -184,7 +184,6 @@ async function parseTxtRecord(filePath, sourceDirName, txtRecordCache = null) {
     aspectRatio: metadata["Aspect ratio"] || null,
     liked: metadata.Liked || null,
     prompt,
-    rawText: text,
     encoding,
     stem,
     idTokens: [...idTokens],

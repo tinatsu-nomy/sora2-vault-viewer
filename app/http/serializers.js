@@ -3,6 +3,8 @@ const path = require("path");
 const { parseJson } = require("../indexer");
 
 function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) {
+  const MAX_MANIFEST_PREVIEW = 200;
+
   function mediaUrlFor(itemId, kind = "media") {
     return `/media?id=${encodeURIComponent(itemId)}&kind=${encodeURIComponent(kind)}`;
   }
@@ -81,6 +83,8 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
   }
 
   function serializeStats(stats, databaseStatus) {
+    const manifests = stats.manifests || [];
+    const manifestPreview = manifests.slice(0, MAX_MANIFEST_PREVIEW);
     return {
       totalItems: stats.totalItems,
       manifestItems: stats.manifestItems,
@@ -89,7 +93,10 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       withLocalText: stats.withLocalText,
       sources: stats.sources,
       sourceOrder: stats.sourceOrder || stats.sources || [],
-      manifests: (stats.manifests || []).map((manifest) => ({
+      manifestCount: manifests.length,
+      manifestsTruncated: manifests.length > manifestPreview.length,
+      manifestPreviewLimit: MAX_MANIFEST_PREVIEW,
+      manifests: manifestPreview.map((manifest) => ({
         file: fileNameOnly(manifest.file),
         exportedAt: manifest.exportedAt || null,
         total: manifest.total ?? null,
@@ -158,8 +165,6 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       local: item.local
         ? {
             txtEncoding: item.local.txtEncoding || null,
-            txtRaw: item.local.txtRaw || null,
-            txtPrompt: item.local.txtPrompt || null,
             parsed: item.local.parsed || null,
             txtUrl: item.hasLocalText ? mediaUrlFor(item.id, "txt") : null,
           }

@@ -63,10 +63,6 @@ function normalizedPromptText(value) {
 function displayTitle(item) {
   const prompt = normalizedPromptText(item?.prompt);
   if (prompt) return prompt;
-
-  const localPrompt = normalizedPromptText(item?.local?.txtPrompt);
-  if (localPrompt) return localPrompt;
-
   return "";
 }
 
@@ -219,6 +215,38 @@ function cameoSearchMarkup(item) {
     .join("");
 }
 
+async function loadTranscriptContent(disclosure) {
+  const txtUrl = disclosure?.dataset?.txtUrl || "";
+  const content = disclosure?.querySelector("[data-transcript-content]");
+  if (!txtUrl || !content) return;
+  if (content.dataset.loaded === "1" || content.dataset.loading === "1") return;
+
+  if (viewer.transcriptCache.has(txtUrl)) {
+    content.textContent = viewer.transcriptCache.get(txtUrl);
+    content.dataset.loaded = "1";
+    return;
+  }
+
+  content.dataset.loading = "1";
+  content.textContent = "Loading transcript...";
+
+  try {
+    const response = await fetch(txtUrl);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(text || "Failed to load transcript");
+    }
+    viewer.transcriptCache.set(txtUrl, text);
+    viewer.trimCache(viewer.transcriptCache, viewer.MAX_DETAIL_CACHE_ENTRIES);
+    content.textContent = text;
+    content.dataset.loaded = "1";
+  } catch (error) {
+    content.textContent = error?.message || "Failed to load transcript";
+  } finally {
+    delete content.dataset.loading;
+  }
+}
+
 function sourceLabel(source) {
   if (!source) return "unknown";
   if (source === "v2_profile") return "profile";
@@ -258,8 +286,16 @@ function sourceMenuMarkup({
       <summary class="nav-chip source-menu-summary">${escapeHtml(summaryLabel)}</summary>
       <div class="source-menu-panel">
         <div class="source-menu-head">
-          <strong>${escapeHtml(title)}</strong>
-          <span class="subtle" data-role="${escapeHtml(`${menuRole}-count`)}"></span>
+          <div class="source-menu-head-meta">
+            <strong>${escapeHtml(title)}</strong>
+            <span class="subtle" data-role="${escapeHtml(`${menuRole}-count`)}"></span>
+          </div>
+          <button
+            type="button"
+            class="secondary source-menu-copy"
+            data-role="${escapeHtml(`${menuRole}-copy`)}"
+            title="Copy the visible user source names"
+          >Copy</button>
         </div>
         <label class="source-menu-master-toggle">
           <input type="checkbox" data-role="${escapeHtml(`${menuRole}-toggle`)}" />
@@ -288,8 +324,16 @@ function charSourceMenuMarkup(groups) {
       <summary class="nav-chip source-menu-summary">Chars</summary>
       <div class="source-menu-panel">
         <div class="source-menu-head">
-          <strong>Character sources</strong>
-          <span class="subtle" data-role="char-sources-count"></span>
+          <div class="source-menu-head-meta">
+            <strong>Character sources</strong>
+            <span class="subtle" data-role="char-sources-count"></span>
+          </div>
+          <button
+            type="button"
+            class="secondary source-menu-copy"
+            data-role="char-sources-copy"
+            title="Copy the visible character names"
+          >Copy</button>
         </div>
         <label class="source-menu-master-toggle">
           <input type="checkbox" data-role="char-sources-toggle" />
@@ -526,6 +570,11 @@ function renderStats() {
       return `<div class="subtle">${escapeHtml(fileName)}</div>`;
     })
     .join("");
+  const manifestTotal = Number(stats.manifestCount || (stats.manifests || []).length || 0);
+  const manifestShown = (stats.manifests || []).length;
+  const manifestSummary = manifestTotal > manifestShown
+    ? `<div class="subtle">Showing ${escapeHtml(String(manifestShown))} of ${escapeHtml(String(manifestTotal))} manifests.</div>`
+    : "";
   const sourceCount = Array.isArray(stats.sourceOrder)
     ? stats.sourceOrder.length
     : Array.isArray(stats.sources)
@@ -575,6 +624,7 @@ function renderStats() {
         </article>
         <article class="summary-card db-card">
           <strong>Loaded manifests</strong>
+          ${manifestSummary}
           ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
         </article>
         <article class="summary-card db-card summary-card-wide summary-card-light">
@@ -838,7 +888,7 @@ function renderList() {
               <div class="badge-row">
                 ${sourceBadges}
                 ${item.hasLocalMedia ? '<span class="badge good">local play</span>' : '<span class="badge warn">remote only</span>'}
-                ${item.local?.txtRaw ? '<span class="badge">TXT</span>' : ""}
+                ${item.hasLocalText ? '<span class="badge">TXT</span>' : ""}
               </div>
             </div>
             <div class="gallery-bottom">
@@ -1075,14 +1125,14 @@ async function renderDetail() {
     </div>
 
     ${
-      item.local?.txtRaw
+      item.hasLocalText && item.local?.txtUrl
         ? `
           <div class="detail-card">
-            <details class="detail-disclosure">
+            <details class="detail-disclosure" data-transcript-disclosure data-txt-url="${escapeHtml(item.local.txtUrl)}">
               <summary>TXT transcript</summary>
               <div class="detail-disclosure-content">
                 <div class="subtle" style="margin-bottom:10px;">encoding: ${escapeHtml(item.local.txtEncoding || "unknown")}</div>
-                <div class="text-box">${escapeHtml(item.local.txtRaw)}</div>
+                <div class="text-box" data-transcript-content>Open this section to load the transcript from the local TXT file.</div>
               </div>
             </details>
           </div>
@@ -1162,6 +1212,14 @@ async function renderDetail() {
       detailVideo.addEventListener("loadedmetadata", syncActualMediaFacts, { once: true });
     }
     detailVideo.play().catch(() => {});
+  }
+
+  for (const disclosure of els.detail.querySelectorAll("[data-transcript-disclosure]")) {
+    disclosure.addEventListener("toggle", () => {
+      if (disclosure.open) {
+        void loadTranscriptContent(disclosure);
+      }
+    });
   }
 }
 

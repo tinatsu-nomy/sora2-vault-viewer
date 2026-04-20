@@ -28,6 +28,24 @@ function mergeTextBlocks(left, right) {
   return [...new Set(values)].join("\n");
 }
 
+function parseManifestExportedAt(value) {
+  const parsed = Date.parse(String(value || "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareManifestPriority(left, right) {
+  const leftExportedAtMs = left?.exportedAtMs;
+  const rightExportedAtMs = right?.exportedAtMs;
+
+  if (leftExportedAtMs != null && rightExportedAtMs != null && leftExportedAtMs !== rightExportedAtMs) {
+    return rightExportedAtMs - leftExportedAtMs;
+  }
+  if (leftExportedAtMs != null && rightExportedAtMs == null) return -1;
+  if (leftExportedAtMs == null && rightExportedAtMs != null) return 1;
+
+  return String(right?.file || "").localeCompare(String(left?.file || ""));
+}
+
 function countUniqueCameoProfiles(entry) {
   const posterUsername = String(entry?.posterUsername || "").trim().replace(/^@+/, "");
   const usernames = (entry?.cameoProfiles || [])
@@ -112,10 +130,11 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
   const manifests = [];
   const manifestErrors = [];
   const manifestFiles = await listManifestFiles(dataDir);
+  const manifestDescriptors = [];
   const seenManifestKeys = new Map();
   const txtRecordCache = createTxtRecordCache(txtCachePath);
 
-  for (const manifestPath of [...manifestFiles].reverse()) {
+  for (const manifestPath of manifestFiles) {
     let raw;
     try {
       raw = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
@@ -127,18 +146,40 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
       continue;
     }
 
-    manifests.unshift({
+    manifestDescriptors.push({
       file: manifestPath,
       exportedAt: raw.exported_at,
+      exportedAtMs: parseManifestExportedAt(raw.exported_at),
       total: raw.total,
       scanSources: raw.scan_sources,
     });
+  }
+
+  manifestDescriptors.sort(compareManifestPriority);
+  manifests.push(...manifestDescriptors.map((descriptor) => ({
+    file: descriptor.file,
+    exportedAt: descriptor.exportedAt,
+    total: descriptor.total,
+    scanSources: descriptor.scanSources,
+  })));
+
+  for (const descriptor of manifestDescriptors) {
+    let raw;
+    try {
+      raw = JSON.parse(await fsp.readFile(descriptor.file, "utf8"));
+    } catch (error) {
+      manifestErrors.push({
+        file: descriptor.file,
+        error: `${error.code || "JSON_ERROR"}: ${error.message}`,
+      });
+      continue;
+    }
 
     const manifestItems = Array.isArray(raw.items) ? raw.items : [];
     for (let itemIndex = manifestItems.length - 1; itemIndex >= 0; itemIndex -= 1) {
       const item = manifestItems[itemIndex];
       const dedupeKey = manifestDedupeKeyFromItem(item);
-      const entry = parseManifestItem(item, manifestPath, raw.exported_at, itemIndex);
+      const entry = parseManifestItem(item, descriptor.file, descriptor.exportedAt, itemIndex);
       if (dedupeKey && seenManifestKeys.has(dedupeKey)) {
         const existingEntryId = seenManifestKeys.get(dedupeKey);
         const existingEntry = entries.get(existingEntryId);
@@ -176,7 +217,14 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
   await attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache });
   await txtRecordCache.persist();
 
-  const items = [...entries.values()].map((entry) => {
+  const items = [...entries.values()];
+  const sourceSet = new Set();
+  let manifestItemsCount = 0;
+  let localOnlyItemsCount = 0;
+  let withLocalMediaCount = 0;
+  let withLocalTextCount = 0;
+
+  for (const entry of items) {
     const dateSortMs = parseDateValue(entry.date);
     const searchText = [
       entry.prompt,
@@ -194,21 +242,25 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
       ...(entry.cameoOwnerUsernames || []),
       entry.manifestFile ? path.basename(entry.manifestFile) : null,
       entry.manifestSearchText,
-      entry.local?.txtRaw,
     ]
       .filter(Boolean)
       .join("\n")
       .toLowerCase();
 
-    return {
-      ...entry,
-      cameoCount: countUniqueCameoProfiles(entry),
-      dateSortMs,
-      hasLocalMedia: Boolean(entry.local?.mediaPath),
-      hasLocalText: Boolean(entry.local?.txtPath),
-      searchText,
-    };
-  });
+    entry.cameoCount = countUniqueCameoProfiles(entry);
+    entry.dateSortMs = dateSortMs;
+    entry.hasLocalMedia = Boolean(entry.local?.mediaPath);
+    entry.hasLocalText = Boolean(entry.local?.txtPath);
+    entry.searchText = searchText;
+
+    if (entry.kind === "manifest") manifestItemsCount += 1;
+    if (entry.kind === "local-only") localOnlyItemsCount += 1;
+    if (entry.hasLocalMedia) withLocalMediaCount += 1;
+    if (entry.hasLocalText) withLocalTextCount += 1;
+    for (const source of entry.sourceMemberships || [entry.source]) {
+      if (source) sourceSet.add(source);
+    }
+  }
 
   items.sort((left, right) => {
     return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER)
@@ -217,17 +269,17 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
 
   const statsSourceOrder = [...new Set([
     ...sourceOrder,
-    ...items.flatMap((item) => item.sourceMemberships || [item.source]).filter(Boolean),
+    ...sourceSet,
   ])];
   statsSourceOrder.sort(compareSourceKeys);
 
   const stats = {
     totalItems: items.length,
-    manifestItems: items.filter((item) => item.kind === "manifest").length,
-    localOnlyItems: items.filter((item) => item.kind === "local-only").length,
-    withLocalMedia: items.filter((item) => item.hasLocalMedia).length,
-    withLocalText: items.filter((item) => item.hasLocalText).length,
-    sources: [...new Set(items.flatMap((item) => item.sourceMemberships || [item.source]).filter(Boolean))].sort(compareSourceKeys),
+    manifestItems: manifestItemsCount,
+    localOnlyItems: localOnlyItemsCount,
+    withLocalMedia: withLocalMediaCount,
+    withLocalText: withLocalTextCount,
+    sources: [...sourceSet].sort(compareSourceKeys),
     sourceOrder: statsSourceOrder,
     manifests,
     manifestErrors,

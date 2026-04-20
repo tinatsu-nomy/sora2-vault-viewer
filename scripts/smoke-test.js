@@ -687,7 +687,7 @@ async function run() {
     );
     assert.equal(detailPayload.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
-    assert.equal(detailPayload.local.txtRaw.includes("Smoke test prompt"), true);
+    assert.equal(detailPayload.local.txtUrl, "/media?id=gen_smoke123&kind=txt");
     assert.equal(detailPayload.cameoProfiles.length, 1, "Expected cameo profile metadata to be preserved");
     assert.equal(detailPayload.cameoProfiles[0].username, "cameo.source.hero");
     assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
@@ -700,6 +700,10 @@ async function run() {
 
     const mediaResponse = await request(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
     assert.equal(mediaResponse.status, 200, "Expected /media to return 200");
+
+    const txtResponse = await request(`http://127.0.0.1:${PORT}${detailPayload.local.txtUrl}`);
+    assert.equal(txtResponse.status, 200, "Expected TXT /media to return 200");
+    assert.equal(txtResponse.body.includes("Smoke test prompt"), true, "Expected TXT /media to expose the transcript on demand");
 
     const cameoAvatarResponse = await request(
       `http://127.0.0.1:${PORT}/avatar?id=${encodeURIComponent(mainItem.id)}&role=cameo&username=${encodeURIComponent("cameo.source.hero")}`,

@@ -54,8 +54,6 @@ function localAttachmentForGroup(group, localRecord) {
     source: group.source || localRecord.source || null,
     txtPath: group.txtPath || null,
     txtEncoding: localRecord.encoding,
-    txtRaw: localRecord.rawText,
-    txtPrompt: localRecord.prompt,
     parsed: {
       declaredSource: localRecord.declaredSource || null,
       generationId: localRecord.generationId,
@@ -131,7 +129,7 @@ function extractMentionedUsernames(value) {
 
 function localOwnerMetadata(source, localRecord) {
   const posterUsername = sourceUsername(source) || null;
-  const cameoOwnerUsernames = extractMentionedUsernames(localRecord?.prompt || localRecord?.rawText || "")
+  const cameoOwnerUsernames = extractMentionedUsernames(localRecord?.prompt || "")
     .filter((username) => username && username !== posterUsername);
   const cameoProfiles = cameoOwnerUsernames.map((username) => ({
     username,
@@ -278,7 +276,6 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
             aspectRatio: null,
             liked: null,
             prompt: "",
-            rawText: "",
             encoding: null,
             stem: basenameWithoutExt(group.mediaPath),
             idTokens: extractIdTokens(group.mediaPath),

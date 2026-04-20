@@ -16,91 +16,122 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     return { ...status };
   }
 
+  function ensureDatabaseSync() {
+    if (!DatabaseSync) {
+      ({ DatabaseSync } = require("node:sqlite"));
+    }
+    return DatabaseSync;
+  }
+
+  function initializeDatabase(database, { resetOnSchemaMismatch }) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS cache_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+
+    const currentSchemaVersion = database.prepare("SELECT value FROM cache_meta WHERE key = ?").get("schemaVersion")?.value || null;
+    if (resetOnSchemaMismatch && currentSchemaVersion !== schemaVersion) {
+      database.exec(`
+        DELETE FROM cache_meta;
+        DROP TABLE IF EXISTS items;
+        DROP TABLE IF EXISTS items_fts;
+      `);
+    }
+
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS items (
+        id TEXT PRIMARY KEY,
+        source TEXT,
+        source_memberships_json TEXT NOT NULL,
+        kind TEXT,
+        date TEXT,
+        date_sort_ms INTEGER,
+        prompt TEXT,
+        gen_id TEXT,
+        generation_id TEXT,
+        task_id TEXT,
+        post_id TEXT,
+        poster_username TEXT,
+        cameo_count INTEGER,
+        owner_usernames_json TEXT NOT NULL,
+        cameo_owner_usernames_json TEXT NOT NULL,
+        duration TEXT,
+        duration_sort REAL,
+        ratio TEXT,
+        width INTEGER,
+        height INTEGER,
+        like_count INTEGER,
+        view_count INTEGER,
+        is_liked INTEGER,
+        has_local_media INTEGER,
+        has_local_text INTEGER,
+        thumb_url TEXT,
+        preview_url TEXT,
+        download_url TEXT,
+        local_media_path TEXT,
+        local_txt_path TEXT,
+        search_text TEXT NOT NULL,
+        detail_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_items_source_date ON items(source, date);
+      CREATE INDEX IF NOT EXISTS idx_items_date_sort_ms ON items(date_sort_ms);
+      CREATE INDEX IF NOT EXISTS idx_items_post_id ON items(post_id);
+      CREATE INDEX IF NOT EXISTS idx_items_task_id ON items(task_id);
+      CREATE INDEX IF NOT EXISTS idx_items_generation_id ON items(generation_id);
+      CREATE INDEX IF NOT EXISTS idx_items_local_flags ON items(has_local_media, has_local_text);
+      CREATE INDEX IF NOT EXISTS idx_items_views ON items(view_count);
+      CREATE INDEX IF NOT EXISTS idx_items_likes ON items(like_count);
+      CREATE INDEX IF NOT EXISTS idx_items_duration_sort ON items(duration_sort);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+        id UNINDEXED,
+        search_text,
+        tokenize = 'unicode61'
+      );
+    `);
+
+    database.prepare(`
+      INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
+    `).run("schemaVersion", schemaVersion);
+  }
+
+  function closeDatabase(database) {
+    if (!database) return;
+    try {
+      database.close();
+    } catch {}
+  }
+
+  function resetLiveDatabaseHandle() {
+    closeDatabase(db);
+    db = null;
+  }
+
+  function removeSqliteArtifacts(filePath) {
+    for (const suffix of ["", "-shm", "-wal"]) {
+      try {
+        fs.rmSync(`${filePath}${suffix}`, { force: true });
+      } catch {}
+    }
+  }
+
+  function openDatabase(filePath, { resetOnSchemaMismatch = true } = {}) {
+    fs.mkdirSync(appDataDir, { recursive: true });
+    const SyncDatabase = ensureDatabaseSync();
+    const database = new SyncDatabase(filePath);
+    initializeDatabase(database, { resetOnSchemaMismatch });
+    return database;
+  }
+
   function getDb() {
     if (!enabled) return null;
     if (db) return db;
 
-    fs.mkdirSync(appDataDir, { recursive: true });
-
     try {
-      if (!DatabaseSync) {
-        ({ DatabaseSync } = require("node:sqlite"));
-      }
-
-      db = new DatabaseSync(dbPath);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS cache_meta (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL
-        );
-      `);
-
-      const currentSchemaVersion = db.prepare("SELECT value FROM cache_meta WHERE key = ?").get("schemaVersion")?.value || null;
-      if (currentSchemaVersion !== schemaVersion) {
-        db.exec(`
-          DELETE FROM cache_meta;
-          DROP TABLE IF EXISTS items;
-          DROP TABLE IF EXISTS items_fts;
-        `);
-      }
-
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS items (
-          id TEXT PRIMARY KEY,
-          source TEXT,
-          source_memberships_json TEXT NOT NULL,
-          kind TEXT,
-          date TEXT,
-          date_sort_ms INTEGER,
-          prompt TEXT,
-          gen_id TEXT,
-          generation_id TEXT,
-          task_id TEXT,
-          post_id TEXT,
-          poster_username TEXT,
-          cameo_count INTEGER,
-          owner_usernames_json TEXT NOT NULL,
-          cameo_owner_usernames_json TEXT NOT NULL,
-          duration TEXT,
-          duration_sort REAL,
-          ratio TEXT,
-          width INTEGER,
-          height INTEGER,
-          like_count INTEGER,
-          view_count INTEGER,
-          is_liked INTEGER,
-          has_local_media INTEGER,
-          has_local_text INTEGER,
-          thumb_url TEXT,
-          preview_url TEXT,
-          download_url TEXT,
-          local_media_path TEXT,
-          local_txt_path TEXT,
-          search_text TEXT NOT NULL,
-          detail_json TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_items_source_date ON items(source, date);
-        CREATE INDEX IF NOT EXISTS idx_items_date_sort_ms ON items(date_sort_ms);
-        CREATE INDEX IF NOT EXISTS idx_items_post_id ON items(post_id);
-        CREATE INDEX IF NOT EXISTS idx_items_task_id ON items(task_id);
-        CREATE INDEX IF NOT EXISTS idx_items_generation_id ON items(generation_id);
-        CREATE INDEX IF NOT EXISTS idx_items_local_flags ON items(has_local_media, has_local_text);
-        CREATE INDEX IF NOT EXISTS idx_items_views ON items(view_count);
-        CREATE INDEX IF NOT EXISTS idx_items_likes ON items(like_count);
-        CREATE INDEX IF NOT EXISTS idx_items_duration_sort ON items(duration_sort);
-
-        CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-          id UNINDEXED,
-          search_text,
-          tokenize = 'unicode61'
-        );
-      `);
-
-      db.prepare(`
-        INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)
-      `).run("schemaVersion", schemaVersion);
-
+      db = openDatabase(dbPath, { resetOnSchemaMismatch: true });
       return db;
     } catch (error) {
       db = null;
@@ -115,11 +146,17 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
   }
 
   function persistIndex(index) {
-    const database = getDb();
-    if (!database) return;
+    if (!enabled) return;
 
+    const nextDbPath = `${dbPath}.next`;
+    const backupDbPath = `${dbPath}.bak`;
+    let database = null;
     let txActive = false;
     try {
+      removeSqliteArtifacts(nextDbPath);
+      removeSqliteArtifacts(backupDbPath);
+      database = openDatabase(nextDbPath, { resetOnSchemaMismatch: true });
+
       const insert = database.prepare(`
         INSERT OR REPLACE INTO items (
           id, source, source_memberships_json, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
@@ -192,6 +229,16 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
       setMeta.run("statsJson", JSON.stringify(index.stats));
       database.exec("COMMIT");
       txActive = false;
+      closeDatabase(database);
+      database = null;
+
+      resetLiveDatabaseHandle();
+      if (fs.existsSync(dbPath)) {
+        removeSqliteArtifacts(backupDbPath);
+        fs.renameSync(dbPath, backupDbPath);
+      }
+      fs.renameSync(nextDbPath, dbPath);
+      removeSqliteArtifacts(backupDbPath);
 
       status = {
         enabled: true,
@@ -205,6 +252,8 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
           database.exec("ROLLBACK");
         } catch {}
       }
+      closeDatabase(database);
+      removeSqliteArtifacts(nextDbPath);
 
       status = {
         enabled: false,
@@ -299,6 +348,25 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     };
   }
 
+  function queryPosterUsernames({ joins, whereClause, values, orderBy }) {
+    const database = getDb();
+    if (!database) return null;
+
+    const fromClause = `FROM items ${joins.join(" ")}`;
+    const sql = `
+      SELECT
+        items.poster_username AS posterUsername,
+        COUNT(*) AS postCount
+      ${fromClause}
+      ${whereClause}
+      AND COALESCE(items.poster_username, '') <> ''
+      GROUP BY items.poster_username
+      ${orderBy}
+    `;
+
+    return database.prepare(sql).all(...values);
+  }
+
   function getItemDetail(id) {
     const database = getDb();
     if (!database) return null;
@@ -326,6 +394,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     persistIndex,
     loadIndexMeta,
     queryItems,
+    queryPosterUsernames,
     getItemDetail,
     getLocalFile,
   };

@@ -37,6 +37,14 @@ const CONFIG_PATH = process.env.SORA_CONFIG_PATH
   : null;
 const AVATAR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".svg"];
 
+function compactIndexForMemory(index) {
+  return {
+    builtAt: index.builtAt,
+    stats: index.stats,
+    items: [],
+  };
+}
+
 async function discoverSourceDirs(dataDir) {
   let entries = [];
   try {
@@ -97,6 +105,9 @@ const indexState = createIndexState({
     });
     store.persistIndex(builtIndex);
     builtIndex.stats.database = store.getStatus();
+    if (builtIndex.stats.database?.enabled) {
+      return compactIndexForMemory(builtIndex);
+    }
     return builtIndex;
   },
 });
@@ -385,6 +396,13 @@ async function handleRequest(request, response) {
       return json(response, 200, serializers.serializeDetailItem(item));
     }
 
+    if (url.pathname === "/api/posters") {
+      const index = await getIndexForRead();
+      return json(response, 200, {
+        items: listingService.listPosterUsernames(index, url),
+      });
+    }
+
     if (url.pathname === "/api/rebuild" && request.method === "POST") {
       try {
         const rebuiltIndex = await indexState.startBuild();
@@ -520,6 +538,15 @@ function startServer(port = DEFAULT_PORT, attempt = 0) {
     const address = server.address();
     const actualPort = typeof address === "object" && address ? address.port : currentPort;
     const displayHost = BIND_HOST === "127.0.0.1" ? "localhost" : BIND_HOST;
+    if (typeof process.send === "function") {
+      try {
+        process.send({
+          type: "listening",
+          host: BIND_HOST,
+          port: actualPort,
+        });
+      } catch {}
+    }
     console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
     for (const line of startupLogLines(actualPort)) {
       console.log(line);

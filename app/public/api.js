@@ -37,7 +37,8 @@ function currentPageQueryString() {
 }
 
 function applyIndexPayload(payload) {
-  viewer.setAvailableSources(payload.stats?.sourceOrder || payload.stats?.sources || []);
+  const nextStats = payload.stats || state.stats;
+  viewer.setAvailableSources(nextStats?.sourceOrder || nextStats?.sources || []);
   state.builtAt = payload.builtAt || null;
   state.indexStatus = payload.indexStatus || {
     isRefreshing: false,
@@ -45,7 +46,7 @@ function applyIndexPayload(payload) {
     refreshError: null,
   };
   state.items = payload.items;
-  state.stats = payload.stats;
+  state.stats = nextStats;
   state.pagination = payload.pagination || {
     total: payload.items.length,
     limit: state.pagination.limit,
@@ -68,6 +69,19 @@ function applyIndexPayload(payload) {
   viewer.persistViewState();
 }
 
+function cacheableIndexPayload(payload) {
+  return {
+    builtAt: payload?.builtAt || null,
+    indexStatus: payload?.indexStatus || {
+      isRefreshing: false,
+      isStale: false,
+      refreshError: null,
+    },
+    items: Array.isArray(payload?.items) ? payload.items : [],
+    pagination: payload?.pagination || null,
+  };
+}
+
 function shouldShowStartupRefreshNotice(payload) {
   if (viewer.startupRefreshNoticeShown) return false;
   if (!payload?.builtAt) return false;
@@ -82,7 +96,7 @@ async function prefetchIndexPage(queryString) {
       const response = await fetch(`/api/index?${queryString}`);
       const payload = await response.json();
       if (!response.ok) return;
-      viewer.rememberPageCache(queryString, payload);
+      viewer.rememberPageCache(queryString, cacheableIndexPayload(payload));
     } catch {}
   })();
   viewer.pagePrefetchInFlight.set(queryString, pending);
@@ -137,7 +151,7 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
       viewer.pageCache.clear();
       viewer.detailCache.clear();
     }
-    viewer.rememberPageCache(queryString, payload);
+    viewer.rememberPageCache(queryString, cacheableIndexPayload(payload));
     applyIndexPayload(payload);
     if (shouldShowStartupRefreshNotice(payload)) {
       viewer.showStartupRefreshNotice();

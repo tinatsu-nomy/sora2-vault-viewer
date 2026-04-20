@@ -37,6 +37,16 @@
           </label>
 
           <div class="toolbar-actions">
+            <label class="field compact toolbar-copy-order">
+              <span>Poster order</span>
+              <select id="copyPostersSort" title="Choose the sort order for copied poster usernames">
+                <option value="name-asc" selected>Name A→Z</option>
+                <option value="name-desc">Name Z→A</option>
+                <option value="posts-desc">Most posts</option>
+                <option value="posts-asc">Fewest posts</option>
+              </select>
+            </label>
+            <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
             <button id="rebuildButton" type="button" class="secondary">Rescan</button>
             <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
           </div>

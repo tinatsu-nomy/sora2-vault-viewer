@@ -196,6 +196,100 @@ async function initViewerApp() {
     els.rebuildModal.setAttribute("aria-hidden", "true");
   }
 
+  async function copyTextToClipboard(text) {
+    const normalizedText = String(text || "");
+    if (!normalizedText.trim()) {
+      throw new Error("Nothing to copy");
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(normalizedText);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = normalizedText;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (!ok) {
+      throw new Error("Clipboard copy failed");
+    }
+  }
+
+  function userSourceListText() {
+    return viewer.customSources(viewer.normalizeSources(state.stats?.sources || []))
+      .map((source) => viewer.sourceDisplayName(source))
+      .join("\n");
+  }
+
+  function charSourceListText() {
+    return viewer.charSourceGroups(viewer.normalizeSources(state.stats?.sources || []))
+      .map((group) => group.label)
+      .join("\n");
+  }
+
+  async function posterUserListText() {
+    const queryString = viewer.buildQueryString();
+    const params = new URLSearchParams(queryString);
+    params.set("posterSort", els.copyPostersSort?.value || "name-asc");
+    const response = await fetch(`/api/posters?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      const message = payload?.details
+        ? `${payload.error || "Failed to load poster usernames"}: ${payload.details}`
+        : payload?.error || "Failed to load poster usernames";
+      throw new Error(message);
+    }
+    return (payload?.items || [])
+      .map((username) => `@${String(username || "").trim().replace(/^@+/, "")}`)
+      .filter((value) => value !== "@")
+      .join("\n");
+  }
+
+  async function handleSourceMenuCopy(button, kind) {
+    const defaultLabel = button.dataset.defaultLabel || button.textContent || "Copy";
+    button.dataset.defaultLabel = defaultLabel;
+    const text = kind === "chars" ? charSourceListText() : userSourceListText();
+
+    button.disabled = true;
+    try {
+      await copyTextToClipboard(text);
+      button.textContent = "Copied";
+    } catch (error) {
+      button.textContent = "Failed";
+    }
+
+    window.setTimeout(() => {
+      button.textContent = defaultLabel;
+      button.disabled = false;
+    }, 1200);
+  }
+
+  async function handlePosterCopy(button) {
+    const defaultLabel = button.dataset.defaultLabel || button.textContent || "Copy posters";
+    button.dataset.defaultLabel = defaultLabel;
+    button.disabled = true;
+    try {
+      const text = await posterUserListText();
+      await copyTextToClipboard(text);
+      button.textContent = "Copied";
+    } catch (error) {
+      button.textContent = "Failed";
+    }
+
+    window.setTimeout(() => {
+      button.textContent = defaultLabel;
+      button.disabled = false;
+    }, 1200);
+  }
+
   Object.assign(viewer, {
     applyCharGroupFilter,
     applySourceGroupToggle,
@@ -215,6 +309,10 @@ async function initViewerApp() {
     viewer.clearDataCaches();
     await refresh();
     els.query.focus();
+  });
+
+  els.copyPostersButton.addEventListener("click", () => {
+    void handlePosterCopy(els.copyPostersButton);
   });
 
   els.query.addEventListener("input", () => {
@@ -279,6 +377,14 @@ async function initViewerApp() {
   });
 
   els.topnav.addEventListener("click", (event) => {
+    const copyButton = event.target.closest('[data-role="custom-sources-copy"], [data-role="char-sources-copy"]');
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const kind = copyButton.getAttribute("data-role") === "char-sources-copy" ? "chars" : "users";
+      void handleSourceMenuCopy(copyButton, kind);
+      return;
+    }
     const chip = event.target.closest(".nav-chip");
     if (!chip) return;
     if (chip.classList.contains("source-menu-summary")) return;

@@ -1,10 +1,13 @@
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 const { app, BrowserWindow, dialog, shell } = require("electron");
 
 const ROOT = path.resolve(__dirname, "..");
 const CONFIG_VERSION = 1;
 const APP_ICON_PATH = path.join(ROOT, "electron", "assets", "icon.png");
+const SERVER_ENTRY_PATH = path.join(ROOT, "app", "server.js");
+const SERVER_MAX_OLD_SPACE_MB = Math.max(1024, Number(process.env.SORA_SERVER_MAX_OLD_SPACE_MB || 4096) || 4096);
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.setAppUserModelId("local.sora2.vault-viewer");
@@ -54,55 +57,79 @@ persistViewerConfig({
   updatedAt: new Date().toISOString(),
 });
 
-const { startServer } = require("../app/server");
-
 let mainWindow = null;
 let localServer = null;
 let serverOrigin = null;
 let isQuitting = false;
 
-function waitForServerListening(server) {
-  return new Promise((resolve, reject) => {
-    if (server.listening) {
-      const address = server.address();
-      if (typeof address === "object" && address?.port) {
-        resolve(address.port);
-        return;
-      }
-      reject(new Error("The local server did not expose a TCP port."));
-      return;
-    }
-
-    const onListening = () => {
-      cleanup();
-      const address = server.address();
-      if (typeof address === "object" && address?.port) {
-        resolve(address.port);
-        return;
-      }
-      reject(new Error("The local server did not expose a TCP port."));
-    };
-    const onError = (error) => {
-      cleanup();
-      reject(error);
-    };
-    const cleanup = () => {
-      server.off("listening", onListening);
-      server.off("error", onError);
-    };
-
-    server.on("listening", onListening);
-    server.on("error", onError);
-  });
-}
-
 async function ensureLocalServer() {
   if (localServer && serverOrigin) return serverOrigin;
+  const child = spawn(process.execPath, [
+    `--max-old-space-size=${SERVER_MAX_OLD_SPACE_MB}`,
+    SERVER_ENTRY_PATH,
+  ], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_OPTIONS: `--max-old-space-size=${SERVER_MAX_OLD_SPACE_MB}`,
+      PORT: "0",
+    },
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+  });
 
-  localServer = startServer(0);
-  const port = await waitForServerListening(localServer);
-  serverOrigin = `http://127.0.0.1:${port}`;
-  return serverOrigin;
+  localServer = child;
+
+  try {
+    const port = await new Promise((resolve, reject) => {
+      const onMessage = (message) => {
+        if (message?.type !== "listening" || !message?.port) return;
+        cleanup();
+        resolve(message.port);
+      };
+      const onError = (error) => {
+        cleanup();
+        reject(error);
+      };
+      const onExit = (code, signal) => {
+        cleanup();
+        reject(new Error(`The embedded viewer server exited before startup completed (code=${code ?? "null"}, signal=${signal || "none"}).`));
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out while waiting for the embedded viewer server to start."));
+      }, 30000);
+      const cleanup = () => {
+        clearTimeout(timeout);
+        child.off("message", onMessage);
+        child.off("error", onError);
+        child.off("exit", onExit);
+      };
+
+      child.on("message", onMessage);
+      child.on("error", onError);
+      child.on("exit", onExit);
+    });
+
+    child.once("exit", () => {
+      if (localServer === child) {
+        localServer = null;
+        serverOrigin = null;
+      }
+    });
+
+    serverOrigin = `http://127.0.0.1:${port}`;
+    return serverOrigin;
+  } catch (error) {
+    if (localServer === child) {
+      localServer = null;
+      serverOrigin = null;
+    }
+    try {
+      child.kill();
+    } catch {}
+    throw error;
+  }
 }
 
 function wireExternalNavigation(window, appUrl) {
@@ -162,7 +189,13 @@ async function shutdownLocalServer() {
   serverOrigin = null;
 
   await new Promise((resolve) => {
-    server.close(() => resolve());
+    const finalize = () => resolve();
+    server.once("exit", finalize);
+    try {
+      server.kill();
+    } catch {
+      resolve();
+    }
   });
 }
 

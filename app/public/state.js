@@ -50,6 +50,8 @@ viewer.els = {
   withMedia: document.querySelector("#withMedia"),
   showCameo: document.querySelector("#showCameo"),
   clearQueryButton: document.querySelector("#clearQueryButton"),
+  copyPostersSort: document.querySelector("#copyPostersSort"),
+  copyPostersButton: document.querySelector("#copyPostersButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
   topnav: document.querySelector(".topnav"),
@@ -76,6 +78,7 @@ viewer.indexRequestToken = 0;
 viewer.searchDebounceTimer = null;
 viewer.pageCache = new Map();
 viewer.detailCache = new Map();
+viewer.transcriptCache = new Map();
 viewer.pagePrefetchInFlight = new Map();
 viewer.refreshPollTimer = null;
 viewer.startupRefreshNoticeTimer = null;
@@ -480,6 +483,7 @@ viewer.rememberDetailCache = function rememberDetailCache(id, payload) {
 viewer.clearDataCaches = function clearDataCaches() {
   viewer.pageCache.clear();
   viewer.detailCache.clear();
+  viewer.transcriptCache.clear();
   viewer.pagePrefetchInFlight.clear();
   viewer.clearIndexRefreshPoll();
 };

@@ -183,8 +183,20 @@ h2 {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: baseline;
+  align-items: start;
   margin-bottom: 10px;
+}
+
+.source-menu-head-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.source-menu-copy {
+  padding: 8px 12px;
+  min-width: 74px;
+  align-self: start;
 }
 
 .source-menu-list {
@@ -473,6 +485,10 @@ button:disabled {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.toolbar-copy-order {
+  min-width: 160px;
 }
 
 .toolbar-status {
