@@ -18,6 +18,17 @@ This project assumes the data structure produced by [SoraVault 2.0](https://gith
 
 For release notes and change summaries, see [CHANGELOG.md](CHANGELOG.md).
 
+## UI Counts
+
+The summary strip at the top of the viewer uses these meanings:
+
+- `Library`: total indexed items across both manifest-backed entries and `local-only` entries
+- `Playback`: items that have a local `mp4` file and can play inside the viewer
+- `Text`: items that have a local `txt` sidecar file
+- `Manifest Gap`: `local-only` items found on disk that could not be matched back to manifest metadata
+- `Sources`: the number of unique indexed source buckets such as `profile`, `liked`, `drafts`, user sources, and char sources
+- `xx-yy of nnnn items`: the current page range inside the filtered result set
+
 ## Quick Start
 
 Requirements:

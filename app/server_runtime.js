@@ -187,39 +187,76 @@ function mimeTypeForExt(ext) {
   }
 }
 
+function normalizeAvatarValue(value) {
+  return String(value || "").trim();
+}
+
+function dedupeAvatarValues(values) {
+  return values.filter((value, index, allValues) => allValues.indexOf(value) === index);
+}
+
+function avatarNameVariants(value) {
+  const rawValue = normalizeAvatarValue(value);
+  if (!rawValue) return [];
+  const withoutAt = rawValue.replace(/^@+/, "");
+  return dedupeAvatarValues([
+    rawValue,
+    withoutAt,
+    withoutAt ? `@${withoutAt}` : null,
+  ].filter(Boolean));
+}
+
+function avatarDirectoryCandidates(ownerUsername) {
+  return dedupeAvatarValues(
+    avatarNameVariants(ownerUsername)
+      .flatMap((value) => [
+        `sora_characters_${value}`,
+        `sora_characters_@${value}`,
+      ]),
+  );
+}
+
+function avatarStemVariants(prefix, value) {
+  return avatarNameVariants(value).map((candidate) => `${prefix}${candidate}`.toLowerCase());
+}
+
 function avatarIdentityForItem(item, role, requestedUsername) {
   if (!item) return null;
   if (role === "poster") {
-    const username = String(item.posterUsername || "").trim().replace(/^@+/, "");
+    const username = normalizeAvatarValue(item.posterUsername).replace(/^@+/, "");
+    const searchOwnerUsernames = dedupeAvatarValues([
+      normalizeAvatarValue(item.posterUsername),
+      normalizeAvatarValue(item.ownerUsername),
+      ...(item.ownerUsernames || []).map((value) => normalizeAvatarValue(value)),
+    ].filter(Boolean));
     return {
       userId: item.profileUserId || null,
       username: username || null,
       ownerUsername: username || null,
-      searchOwnerUsernames: [username || null].filter(Boolean),
+      searchOwnerUsernames,
     };
   }
 
   if (role === "cameo") {
-    const normalizedUsername = String(requestedUsername || "").trim().replace(/^@+/, "");
+    const normalizedUsername = normalizeAvatarValue(requestedUsername).replace(/^@+/, "");
     const matchedProfile = (item.cameoProfiles || []).find((profile) => {
-      return String(profile?.username || "").trim().replace(/^@+/, "") === normalizedUsername;
+      return normalizeAvatarValue(profile?.username).replace(/^@+/, "") === normalizedUsername;
     });
     const username = matchedProfile?.username || normalizedUsername || null;
+    const profileOwnerUsername = normalizeAvatarValue(matchedProfile?.ownerUsername);
     const derivedOwnerUsername = username ? username.split(".")[0] : null;
-    const searchOwnerUsernames = [
-      item.posterUsername,
-      item.ownerUsername,
-      ...(item.ownerUsernames || []),
-      derivedOwnerUsername,
-      username,
-    ]
-      .map((value) => String(value || "").trim().replace(/^@+/, ""))
-      .filter(Boolean)
-      .filter((value, index, allValues) => allValues.indexOf(value) === index);
+    const searchOwnerUsernames = dedupeAvatarValues([
+      normalizeAvatarValue(item.posterUsername),
+      normalizeAvatarValue(item.ownerUsername),
+      ...(item.ownerUsernames || []).map((value) => normalizeAvatarValue(value)),
+      profileOwnerUsername,
+      normalizeAvatarValue(derivedOwnerUsername),
+      normalizeAvatarValue(username),
+    ].filter(Boolean));
     return {
       userId: matchedProfile?.userId || null,
       username,
-      ownerUsername: derivedOwnerUsername,
+      ownerUsername: profileOwnerUsername || derivedOwnerUsername,
       searchOwnerUsernames,
     };
   }
@@ -228,9 +265,12 @@ function avatarIdentityForItem(item, role, requestedUsername) {
 }
 
 function avatarSearchDirs(identity) {
-  const dirs = (identity?.searchOwnerUsernames || [identity?.ownerUsername])
-    .filter(Boolean)
-    .map((ownerUsername) => path.join(DATA_DIR, `sora_characters_@${ownerUsername}`));
+  const dirs = dedupeAvatarValues(
+    (identity?.searchOwnerUsernames || [identity?.ownerUsername])
+      .filter(Boolean)
+      .flatMap((ownerUsername) => avatarDirectoryCandidates(ownerUsername))
+      .map((dirName) => path.join(DATA_DIR, dirName)),
+  );
 
   dirs.push(
     path.join(AVATAR_DIR, "cameo"),
@@ -253,22 +293,22 @@ function avatarCandidateNames(identity) {
 }
 
 async function resolveCharacterAvatarPath(identity, role) {
-  const baseDirs = (identity?.searchOwnerUsernames || [identity?.ownerUsername])
-    .filter(Boolean)
-    .map((ownerUsername) => path.join(DATA_DIR, `sora_characters_@${ownerUsername}`))
-    .filter((baseDir, index, allDirs) => allDirs.indexOf(baseDir) === index);
+  const baseDirs = dedupeAvatarValues(
+    (identity?.searchOwnerUsernames || [identity?.ownerUsername])
+      .filter(Boolean)
+      .flatMap((ownerUsername) => avatarDirectoryCandidates(ownerUsername))
+      .map((dirName) => path.join(DATA_DIR, dirName)),
+  );
 
   if (!baseDirs.length) return null;
 
   const expectedStems = role === "poster"
-    ? [`owner_${identity.ownerUsername || ""}`]
+    ? avatarStemVariants("owner_", identity.ownerUsername || identity.username || "")
     : [
-        `character_${identity.username || ""}`,
-        `owner_${identity.username || ""}`,
+        ...avatarStemVariants("character_", identity.username || ""),
+        ...avatarStemVariants("owner_", identity.username || ""),
       ];
-  const normalizedExpectedStems = expectedStems
-    .filter(Boolean)
-    .map((stem) => stem.toLowerCase());
+  const normalizedExpectedStems = dedupeAvatarValues(expectedStems.filter(Boolean));
 
   for (const baseDir of baseDirs) {
     if (!isPathInside(DATA_DIR, baseDir)) continue;

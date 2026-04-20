@@ -444,27 +444,27 @@ function renderStats() {
 
   els.stats.innerHTML = `
     <div class="summary-grid">
-      <article class="summary-card summary-card-feature">
+      <article class="summary-card summary-card-feature" title="Total indexed items across manifest-backed and local-only entries.">
         <span class="summary-label">Library</span>
         <strong>${stats.totalItems}</strong>
         <small>Total indexed items</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card" title="Items that have a local mp4 file and can play inside the viewer.">
         <span class="summary-label">Playback</span>
         <strong>${stats.withLocalMedia}</strong>
         <small>Playable locally</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card" title="Items that have a local TXT sidecar file.">
         <span class="summary-label">Text</span>
         <strong>${stats.withLocalText}</strong>
         <small>Items with TXT</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card" title="Local-only items that were found on disk but could not be matched to manifest metadata.">
         <span class="summary-label">Manifest Gap</span>
         <strong>${stats.localOnlyItems}</strong>
         <small>Local-only items</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card" title="Unique source buckets currently indexed, such as profile, liked, drafts, user, and char sources.">
         <span class="summary-label">Sources</span>
         <strong>${sourceCount}</strong>
         <small>Visible source buckets</small>
@@ -486,6 +486,17 @@ function renderStats() {
         <article class="summary-card db-card">
           <strong>Loaded manifests</strong>
           ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
+        </article>
+        <article class="summary-card db-card summary-card-wide summary-card-light">
+          <strong>Counts guide</strong>
+          <div class="stats-glossary">
+            <div><span>Library</span><span>Total indexed items across manifest-backed and local-only entries.</span></div>
+            <div><span>Playback</span><span>Items with a local mp4 file that can play inside the viewer.</span></div>
+            <div><span>Text</span><span>Items with a local TXT sidecar file.</span></div>
+            <div><span>Manifest Gap</span><span>Local-only items that were found on disk but could not be matched to manifest metadata.</span></div>
+            <div><span>Sources</span><span>Unique source buckets currently indexed, such as profile, liked, drafts, user, and char sources.</span></div>
+            <div><span>xx-yy of nnnn items</span><span>The current page range inside the filtered result set.</span></div>
+          </div>
         </article>
         <article class="summary-card db-card summary-card-wide summary-card-light">
           <strong>Paths</strong>
@@ -680,6 +691,7 @@ function renderList() {
   const start = total === 0 ? 0 : offset + 1;
   const end = offset + state.items.length;
   els.resultMeta.textContent = total === 0 ? "0 items" : `${start}-${end} of ${total} items`;
+  els.resultMeta.title = "Current page range inside the filtered result set.";
   if (!state.items.length) {
     releaseGalleryMedia();
     els.list.innerHTML = `
@@ -899,6 +911,11 @@ async function renderDetail() {
   const metadataResolution = metadataResolutionText(item);
   const metadataRatio = metadataRatioText(item);
   const sourceSummary = sourceLabelsForItem(item).join(", ");
+  const manifestLabel = item.manifestFile
+    ? item.manifestFile
+    : item.kind === "local-only"
+      ? "No manifest match (local-only)"
+      : "Unknown";
   const manifestSupplementLines = [
     item.posterUsername && item.profileUserId
       ? `@${item.posterUsername} : ${item.profileUserId} (profile.user_id)`
@@ -941,18 +958,19 @@ async function renderDetail() {
 
     <div class="detail-card">
       <h3>Overview</h3>
-      <div class="detail-grid">
-        <div class="detail-row"><span>source</span><strong>${escapeHtml(sourceSummary)}</strong></div>
-        <div class="detail-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row"><span>posted by</span><strong>${posterInline}</strong></div>
-        ${state.filters.showCameo ? `<div class="detail-row"><span>cameo</span><strong class="detail-user-list">${cameoInline || escapeHtml(cameoUsernames)}</strong></div>` : ""}
-        <div class="detail-row"><span class="detail-label-icon">${heartIconMarkup()}</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
-        <div class="detail-row"><span class="detail-label-icon">${eyeIconMarkup()}</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
-        <div class="detail-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
-        <div class="detail-row"><span>resolution</span><strong data-detail-resolution>${escapeHtml(metadataResolution)}</strong></div>
-        <div class="detail-row hidden" data-detail-metadata-resolution-row><span>metadata resolution</span><strong>${escapeHtml(metadataResolution)}</strong></div>
-        <div class="detail-row"><span>ratio</span><strong data-detail-ratio>${escapeHtml(metadataRatio)}</strong></div>
-        <div class="detail-row hidden" data-detail-metadata-ratio-row><span>metadata ratio</span><strong>${escapeHtml(metadataRatio)}</strong></div>
+      <div class="detail-grid detail-grid-single detail-grid-overview">
+        <div class="detail-row detail-overview-row"><span>source</span><strong>${escapeHtml(sourceSummary)}</strong></div>
+        <div class="detail-row detail-overview-row"><span>manifest</span><strong>${escapeHtml(manifestLabel)}</strong></div>
+        <div class="detail-row detail-overview-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
+        <div class="detail-row detail-overview-row"><span>posted by</span><strong>${posterInline || escapeHtml("—")}</strong></div>
+        ${state.filters.showCameo ? `<div class="detail-row detail-overview-row"><span>cameo</span><strong class="detail-user-list">${cameoInline || escapeHtml(cameoUsernames || "—")}</strong></div>` : ""}
+        <div class="detail-row detail-overview-row"><span class="detail-label-icon">${heartIconMarkup()} likes</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
+        <div class="detail-row detail-overview-row"><span class="detail-label-icon">${eyeIconMarkup()} views</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
+        <div class="detail-row detail-overview-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
+        <div class="detail-row detail-overview-row"><span>resolution</span><strong data-detail-resolution>${escapeHtml(metadataResolution)}</strong></div>
+        <div class="detail-row detail-overview-row hidden" data-detail-metadata-resolution-row><span>metadata resolution</span><strong>${escapeHtml(metadataResolution)}</strong></div>
+        <div class="detail-row detail-overview-row"><span>ratio</span><strong data-detail-ratio>${escapeHtml(metadataRatio)}</strong></div>
+        <div class="detail-row detail-overview-row hidden" data-detail-metadata-ratio-row><span>metadata ratio</span><strong>${escapeHtml(metadataRatio)}</strong></div>
       </div>
     </div>
 

@@ -126,6 +126,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
     return {
       id: item.id,
       kind: item.kind,
+      manifestFile: item.manifestFile ? fileNameOnly(item.manifestFile) : null,
       source: item.source,
       sourceMemberships: item.sourceMemberships || [item.source].filter(Boolean),
       date: item.date,

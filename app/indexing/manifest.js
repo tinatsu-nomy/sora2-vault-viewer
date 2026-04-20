@@ -127,10 +127,12 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     .map((profile) => ({
       username: profile?.username || null,
       userId: profile?.user_id || null,
+      ownerUsername: profile?.owner_profile?.username || null,
     }))
     .filter((profile) => profile.username);
   const cameoOwnerUsernames = [
     ...cameoProfiles.map((profile) => profile.username),
+    ...cameoProfiles.map((profile) => profile.ownerUsername),
   ].filter(Boolean);
   const uniqueCameoOwnerUsernames = [...new Set(cameoOwnerUsernames)].filter((username) => username !== posterUsername);
   const uniqueCameoProfiles = cameoProfiles.filter((profile, index, allProfiles) => {
