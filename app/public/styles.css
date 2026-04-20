@@ -973,6 +973,95 @@ button:disabled {
   word-break: break-word;
 }
 
+.user-inline-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-inline-primary {
+  min-width: 0;
+}
+
+.user-inline-secondary {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.detail-user-search {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-user-search:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(143, 169, 255, 0.7);
+  text-underline-offset: 0.18em;
+}
+
+.detail-user-search:focus-visible {
+  outline: 2px solid rgba(143, 169, 255, 0.72);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.detail-user-stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.detail-user-inline-group {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.detail-user-text-stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.detail-user-search-secondary {
+  justify-self: start;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.detail-user-line {
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.detail-user-line-primary {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.detail-user-search-secondary:hover {
+  color: var(--text);
+}
+
 .badge.good {
   color: var(--good);
 }
@@ -1134,8 +1223,8 @@ button:disabled {
 }
 
 .detail-overview-row {
-  grid-template-columns: minmax(96px, 124px) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: clamp(74px, 20%, 92px) minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
   padding: 10px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -1151,6 +1240,7 @@ button:disabled {
 }
 
 .detail-overview-row span {
+  font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }

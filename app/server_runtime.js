@@ -15,7 +15,7 @@ const fsp = fs.promises;
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "5";
+const SQLITE_SCHEMA_VERSION = "6";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";

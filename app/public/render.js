@@ -79,6 +79,11 @@ function formatPosterUsername(item) {
   return `@${item.posterUsername}`;
 }
 
+function formatOwnerUsername(value) {
+  const username = String(value || "").trim().replace(/^@+/, "");
+  return username ? `@${username}` : "";
+}
+
 function formatCameoUsernames(item) {
   const usernames = item.cameoOwnerUsernames?.length ? item.cameoOwnerUsernames : [];
   if (!usernames.length) return "";
@@ -113,6 +118,62 @@ function userInlineMarkup(label, url) {
   `;
 }
 
+function userSearchButtonMarkup(label, url, query, detailText = "", className = "") {
+  const normalizedQuery = String(query || "").trim().replace(/^@+/, "");
+  const searchQuery = normalizedQuery ? `@${normalizedQuery}` : "";
+  return `
+    <button
+      type="button"
+      class="user-inline detail-user-search ${escapeHtml(className)}"
+      data-search-query="${escapeHtml(searchQuery)}"
+      title="Search for ${escapeHtml(label)}"
+    >
+      ${avatarDotMarkup(url)}
+      <span class="user-inline-text">
+        <span class="user-inline-primary">${escapeHtml(label)}</span>
+        ${detailText ? `<span class="user-inline-secondary">${escapeHtml(detailText)}</span>` : ""}
+      </span>
+    </button>
+  `;
+}
+
+function textSearchButtonMarkup(label, query, className = "") {
+  const normalizedQuery = String(query || "").trim().replace(/^@+/, "");
+  const searchQuery = normalizedQuery ? `@${normalizedQuery}` : "";
+  return `
+    <button
+      type="button"
+      class="detail-user-search detail-user-search-secondary ${escapeHtml(className)}"
+      data-search-query="${escapeHtml(searchQuery)}"
+      title="Search for ${escapeHtml(label)}"
+    >
+      ${escapeHtml(label)}
+    </button>
+  `;
+}
+
+function userStackSearchMarkup({
+  avatarUrl,
+  primaryLabel,
+  primaryQuery,
+  secondaryLabel = "",
+  secondaryQuery = "",
+}) {
+  const primary = textSearchButtonMarkup(primaryLabel, primaryQuery, "detail-user-line detail-user-line-primary");
+  const secondary = secondaryLabel
+    ? textSearchButtonMarkup(secondaryLabel, secondaryQuery, "detail-user-line detail-user-owner")
+    : "";
+  return `
+    <span class="detail-user-inline-group">
+      ${avatarDotMarkup(avatarUrl)}
+      <span class="detail-user-text-stack">
+        ${primary}
+        ${secondary}
+      </span>
+    </span>
+  `;
+}
+
 function cameoEntries(item) {
   if (item?.cameoProfiles?.length) {
     return item.cameoProfiles
@@ -120,6 +181,7 @@ function cameoEntries(item) {
       .map((profile) => ({
         username: profile.username,
         userId: profile.userId || null,
+        ownerUsername: profile.ownerUsername || null,
       }));
   }
 
@@ -128,6 +190,7 @@ function cameoEntries(item) {
     .map((username) => ({
       username,
       userId: null,
+      ownerUsername: null,
     }));
 }
 
@@ -136,6 +199,23 @@ function cameoInlineMarkup(item) {
   if (!entries.length) return "";
   return entries
     .map((entry) => userInlineMarkup(`@${entry.username}`, avatarUrlForItem(item, "cameo", entry.username)))
+    .join("");
+}
+
+function cameoSearchMarkup(item) {
+  const entries = cameoEntries(item);
+  if (!entries.length) return "";
+  return entries
+    .map((entry) => {
+      const ownerLabel = formatOwnerUsername(entry.ownerUsername);
+      return userStackSearchMarkup({
+        avatarUrl: avatarUrlForItem(item, "cameo", entry.username),
+        primaryLabel: `@${entry.username}`,
+        primaryQuery: entry.username,
+        secondaryLabel: ownerLabel && ownerLabel !== `@${entry.username}` ? `owned by ${ownerLabel}` : "",
+        secondaryQuery: ownerLabel,
+      });
+    })
     .join("");
 }
 
@@ -707,7 +787,9 @@ function renderList() {
     .map((item) => {
       const title = displayTitle(item);
       const posterUsername = formatPosterUsername(item);
-      const cameoCount = cameoEntries(item).length;
+      const cameoCount = Number.isFinite(Number(item.cameoCount))
+        ? Number(item.cameoCount)
+        : cameoEntries(item).length;
       const sourceBadges = sourceLabelsForItem(item)
         .map((label) => `<span class="badge">${escapeHtml(label)}</span>`)
         .join("");
@@ -889,7 +971,15 @@ async function renderDetail() {
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
   const posterInline = posterUsername ? userInlineMarkup(posterUsername, avatarUrlForItem(item, "poster")) : "";
+  const posterSearch = posterUsername
+    ? userStackSearchMarkup({
+      avatarUrl: avatarUrlForItem(item, "poster"),
+      primaryLabel: posterUsername,
+      primaryQuery: posterUsername,
+    })
+    : "";
   const cameoInline = cameoInlineMarkup(item);
+  const cameoSearch = cameoSearchMarkup(item);
   const summaryChips = [
     item.hasLocalMedia ? '<span class="detail-chip accent">Local playback</span>' : '<span class="detail-chip">Remote links only</span>',
     item.date ? `<span class="detail-chip">${escapeHtml(item.date)}</span>` : "",
@@ -962,8 +1052,8 @@ async function renderDetail() {
         <div class="detail-row detail-overview-row"><span>source</span><strong>${escapeHtml(sourceSummary)}</strong></div>
         <div class="detail-row detail-overview-row"><span>manifest</span><strong>${escapeHtml(manifestLabel)}</strong></div>
         <div class="detail-row detail-overview-row"><span>date</span><strong>${escapeHtml(item.date || "")}</strong></div>
-        <div class="detail-row detail-overview-row"><span>posted by</span><strong>${posterInline || escapeHtml("—")}</strong></div>
-        ${state.filters.showCameo ? `<div class="detail-row detail-overview-row"><span>cameo</span><strong class="detail-user-list">${cameoInline || escapeHtml(cameoUsernames || "—")}</strong></div>` : ""}
+        <div class="detail-row detail-overview-row"><span>posted by</span><strong class="detail-user-list">${posterSearch || escapeHtml("—")}</strong></div>
+        ${state.filters.showCameo ? `<div class="detail-row detail-overview-row"><span>cameo</span><strong class="detail-user-list">${cameoSearch || escapeHtml(cameoUsernames || "—")}</strong></div>` : ""}
         <div class="detail-row detail-overview-row"><span class="detail-label-icon">${heartIconMarkup()} likes</span><strong>${escapeHtml(item.likeCount ?? "")}</strong></div>
         <div class="detail-row detail-overview-row"><span class="detail-label-icon">${eyeIconMarkup()} views</span><strong>${escapeHtml(item.viewCount ?? "")}</strong></div>
         <div class="detail-row detail-overview-row"><span>duration</span><strong>${escapeHtml(String(item.duration || item.local?.parsed?.duration || ""))}</strong></div>
@@ -1082,5 +1172,6 @@ Object.assign(viewer, {
   sourceLabel,
   syncNavChips,
   updateActiveCard,
+  userSearchButtonMarkup,
 });
 })();

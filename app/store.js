@@ -58,6 +58,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
           task_id TEXT,
           post_id TEXT,
           poster_username TEXT,
+          cameo_count INTEGER,
           owner_usernames_json TEXT NOT NULL,
           cameo_owner_usernames_json TEXT NOT NULL,
           duration TEXT,
@@ -122,13 +123,13 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
       const insert = database.prepare(`
         INSERT OR REPLACE INTO items (
           id, source, source_memberships_json, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
-          poster_username, owner_usernames_json, cameo_owner_usernames_json,
+          poster_username, cameo_count, owner_usernames_json, cameo_owner_usernames_json,
           duration, duration_sort, ratio, width, height, like_count, view_count,
           is_liked, has_local_media, has_local_text, thumb_url, preview_url, download_url,
           local_media_path, local_txt_path, search_text, detail_json
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?,
+          ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?
@@ -161,6 +162,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
           item.taskId,
           item.postId,
           item.posterUsername || null,
+          Number(item.cameoCount || 0),
           JSON.stringify(item.ownerUsernames || []),
           JSON.stringify(item.cameoOwnerUsernames || []),
           item.duration == null ? null : String(item.duration),
@@ -268,6 +270,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         items.like_count AS likeCount,
         items.view_count AS viewCount,
         items.poster_username AS posterUsername,
+        items.cameo_count AS cameoCount,
         items.cameo_owner_usernames_json AS cameoOwnerUsernamesJson,
         items.is_liked AS isLiked,
         items.preview_url AS previewUrl,

@@ -301,6 +301,20 @@ async function initViewerApp() {
     applySourceFilter(checkbox.dataset.source);
   });
 
+  els.detail.addEventListener("click", async (event) => {
+    const searchButton = event.target.closest("[data-search-query]");
+    if (!searchButton) return;
+    const query = String(searchButton.getAttribute("data-search-query") || "").trim();
+    if (!query) return;
+    viewer.clearSearchDebounce();
+    els.query.value = query;
+    resetPagination();
+    viewer.clearDataCaches();
+    await refresh();
+    els.query.focus();
+    els.query.select();
+  });
+
   for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
     checkbox.addEventListener("change", async () => {
       resetPagination();

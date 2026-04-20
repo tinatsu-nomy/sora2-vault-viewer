@@ -28,6 +28,15 @@ function mergeTextBlocks(left, right) {
   return [...new Set(values)].join("\n");
 }
 
+function countUniqueCameoProfiles(entry) {
+  const posterUsername = String(entry?.posterUsername || "").trim().replace(/^@+/, "");
+  const usernames = (entry?.cameoProfiles || [])
+    .map((profile) => String(profile?.username || "").trim().replace(/^@+/, ""))
+    .filter(Boolean)
+    .filter((username) => username !== posterUsername);
+  return [...new Set(usernames)].length;
+}
+
 function mergeManifestEntries(baseEntry, incomingEntry) {
   const sourceMemberships = normalizeSourceMemberships([
     ...(baseEntry.sourceMemberships || [baseEntry.source].filter(Boolean)),
@@ -193,6 +202,7 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
 
     return {
       ...entry,
+      cameoCount: countUniqueCameoProfiles(entry),
       dateSortMs,
       hasLocalMedia: Boolean(entry.local?.mediaPath),
       hasLocalText: Boolean(entry.local?.txtPath),
