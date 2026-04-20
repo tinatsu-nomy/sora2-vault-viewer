@@ -109,11 +109,13 @@ AnyFolder/
 - If you move only the EXE to a different folder after first launch, the app may continue using the previously saved `dataDir`
 - If the app does not read the `sora2_data\` next to the EXE that you expect, set `SORA_DATA_DIR` explicitly or update `viewer-config.json`
 - If you change the data directory after the app has already been launched, initialize `app-data\` as well so the saved `dataDir` and caches do not keep pointing at the previous location
+- Startup now prefers the last completed SQLite cache so the viewer opens faster on large libraries
+- After adding or changing manifests, videos, or TXT files while the app is closed, click `Rescan` to rebuild the cache from disk
 
 Distribution:
 
-- Release page: [v0.2.5 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.5)
-- Portable download: [Sora2_Vault_Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.5/Sora2_Vault_Viewer-portable.exe)
+- Release page: [v0.2.6 release](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/tag/v0.2.6)
+- Portable download: [Sora2_Vault_Viewer-portable.exe](https://github.com/tinatsu-nomy/sora2-vault-viewer/releases/download/v0.2.6/Sora2_Vault_Viewer-portable.exe)
 - Place `sora2_data/` in the same folder as `Sora2_Vault_Viewer-portable.exe` before launch
 - The app stores settings, SQLite cache, and TXT cache under `app.getPath("userData")\app-data\`
 - On Windows, this is typically `C:\Users\<your-user-name>\AppData\Roaming\Sora2 Vault Viewer\app-data\`
@@ -187,7 +189,7 @@ Add new manifest JSON files:
 1. Copy the new `soravault_manifest_*.json` file into `sora2_data/`
 2. Keep the `soravault_manifest_*.json` naming pattern so the viewer can detect it automatically
    Examples include `soravault_manifest_2026-04-17.json` and `soravault_manifest_merged_*.json`
-3. Click `Rescan` or restart the server
+3. Click `Rescan`
 4. Confirm the file name appears in `Loaded manifests`
 
 Add new local media and TXT files:
@@ -198,7 +200,7 @@ Add new local media and TXT files:
    - Example: `sora_v2_drafts`
    - Other SoraVault 2.0 `sora_v2_*` source directories are also supported
 2. Keep each `mp4` and `txt` pair together using the exported file names from SoraVault 2.0
-3. Click `Rescan` or restart the server
+3. Click `Rescan`
 4. Confirm the new items appear in the gallery and detail view
 
 How local files are linked to manifest JSON:
@@ -214,6 +216,7 @@ If these conditions are not met, the files can still appear as `local-only` item
 ## Troubleshooting
 
 - If new manifests or files do not appear, click `Rescan` and then check `Loaded manifests`
+- On large libraries, startup may show cached results from the last completed scan until you click `Rescan`
 - If a manifest is malformed, the viewer skips it and continues indexing the remaining files
 - If the UI shows an index, detail, or rebuild error, fix the underlying file issue and try `Rescan` again
 - Run `npm run check` for syntax validation and `npm test` for the smoke test fixture

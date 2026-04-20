@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6
+
+### Cache Workflow
+
+- Changed startup to use the last completed SQLite cache immediately instead of always triggering an automatic full rescan
+- Kept `Rescan` as the explicit rebuild action and continued rebuilding the SQLite cache by deleting and rewriting all cached rows
+- Added a temporary startup notice that reminds users to click `Rescan` after updating files while the app was closed
+
 ## v0.2.5
 
 ### Source Handling And Indexing
