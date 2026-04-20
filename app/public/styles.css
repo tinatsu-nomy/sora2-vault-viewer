@@ -507,6 +507,12 @@ button:disabled {
   color: #2d2300;
 }
 
+.index-status-banner.info {
+  border-color: rgba(82, 132, 255, 0.24);
+  background: rgba(232, 241, 255, 0.96);
+  color: #16325f;
+}
+
 .index-status-title {
   font-size: 12px;
   letter-spacing: 0.14em;

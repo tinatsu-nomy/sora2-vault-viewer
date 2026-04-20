@@ -78,10 +78,14 @@ viewer.pageCache = new Map();
 viewer.detailCache = new Map();
 viewer.pagePrefetchInFlight = new Map();
 viewer.refreshPollTimer = null;
+viewer.startupRefreshNoticeTimer = null;
+viewer.startupRefreshNoticeVisible = false;
+viewer.startupRefreshNoticeShown = false;
 viewer.MAX_PAGE_CACHE_ENTRIES = 18;
 viewer.MAX_DETAIL_CACHE_ENTRIES = 120;
 viewer.MIN_PAGE_BUTTON_LOADING_MS = 180;
 viewer.BACKGROUND_REFRESH_POLL_MS = 1200;
+viewer.STARTUP_REFRESH_NOTICE_MS = 12000;
 viewer.SOURCE_ORDER = [];
 viewer.VIEW_STATE_STORAGE_KEY = "sora-viewer:view-state:v1";
 viewer.VIEW_STATE_QUERY_KEYS = [
@@ -491,11 +495,13 @@ viewer.pendingPageNumber = function pendingPageNumber() {
   return state.pagination.total === 0 ? 1 : Math.floor(state.pagination.offset / state.pagination.limit) + 1;
 };
 
-viewer.showPageLoadingModal = function showPageLoadingModal() {
+viewer.showPageLoadingModal = function showPageLoadingModal(options = {}) {
   const { els } = viewer;
   const pageNumber = viewer.pendingPageNumber();
-  els.pageLoadingTitle.textContent = `Loading page ${pageNumber}...`;
-  els.pageLoadingMessage.textContent = "Updating the gallery and selected details.";
+  const title = String(options.title || "").trim() || `Loading page ${pageNumber}...`;
+  const message = String(options.message || "").trim() || "Updating the gallery and selected details.";
+  els.pageLoadingTitle.textContent = title;
+  els.pageLoadingMessage.textContent = message;
   els.pageLoadingModal.classList.remove("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "false");
 };
@@ -504,6 +510,30 @@ viewer.hidePageLoadingModal = function hidePageLoadingModal() {
   const { els } = viewer;
   els.pageLoadingModal.classList.add("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "true");
+};
+
+viewer.clearStartupRefreshNotice = function clearStartupRefreshNotice() {
+  if (viewer.startupRefreshNoticeTimer) {
+    window.clearTimeout(viewer.startupRefreshNoticeTimer);
+    viewer.startupRefreshNoticeTimer = null;
+  }
+  if (!viewer.startupRefreshNoticeVisible) return;
+  viewer.startupRefreshNoticeVisible = false;
+  if (viewer.renderIndexStatus) viewer.renderIndexStatus();
+};
+
+viewer.showStartupRefreshNotice = function showStartupRefreshNotice() {
+  viewer.startupRefreshNoticeShown = true;
+  viewer.startupRefreshNoticeVisible = true;
+  if (viewer.startupRefreshNoticeTimer) {
+    window.clearTimeout(viewer.startupRefreshNoticeTimer);
+  }
+  viewer.startupRefreshNoticeTimer = window.setTimeout(() => {
+    viewer.startupRefreshNoticeTimer = null;
+    viewer.startupRefreshNoticeVisible = false;
+    if (viewer.renderIndexStatus) viewer.renderIndexStatus();
+  }, viewer.STARTUP_REFRESH_NOTICE_MS);
+  if (viewer.renderIndexStatus) viewer.renderIndexStatus();
 };
 
 viewer.clearIndexRefreshPoll = function clearIndexRefreshPoll() {

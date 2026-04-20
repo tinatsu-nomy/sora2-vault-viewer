@@ -467,9 +467,11 @@ async function handleRequest(request, response) {
 
 async function logIndexSummary() {
   try {
-    const index = indexState.isBuilding()
-      ? await indexState.startBuild()
-      : await indexState.ensureReady();
+    const currentIndex = indexState.getCurrent();
+    const index = currentIndex
+      || (indexState.isBuilding()
+        ? await indexState.startBuild()
+        : await indexState.ensureReady());
     console.log(`Indexed ${index.stats.totalItems} items`);
     if (index.stats.manifestErrors?.length) {
       console.warn(`Skipped ${index.stats.manifestErrors.length} malformed manifest file(s).`);
@@ -522,8 +524,14 @@ function startServer(port = DEFAULT_PORT, attempt = 0) {
     for (const line of startupLogLines(actualPort)) {
       console.log(line);
     }
-    void indexState.startBuild();
-    void logIndexSummary();
+    if (indexState.getCurrent()) {
+      void logIndexSummary();
+      console.log("Using cached SQLite index at startup. Automatic rescan is disabled.");
+      console.log("Use the Rescan button when you want to rebuild the cache from manifests and local files.");
+    } else {
+      void indexState.startBuild();
+      void logIndexSummary();
+    }
     console.log("Press Ctrl+C in this terminal to stop the server.");
   });
 

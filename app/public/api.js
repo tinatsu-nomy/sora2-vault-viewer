@@ -68,6 +68,13 @@ function applyIndexPayload(payload) {
   viewer.persistViewState();
 }
 
+function shouldShowStartupRefreshNotice(payload) {
+  if (viewer.startupRefreshNoticeShown) return false;
+  if (!payload?.builtAt) return false;
+  if (!payload?.stats?.database?.enabled) return false;
+  return true;
+}
+
 async function prefetchIndexPage(queryString) {
   if (!queryString || viewer.pageCache.has(queryString) || viewer.pagePrefetchInFlight.has(queryString)) return;
   const pending = (async () => {
@@ -132,6 +139,9 @@ async function fetchIndex({ reason = "load", useCache = true } = {}) {
     }
     viewer.rememberPageCache(queryString, payload);
     applyIndexPayload(payload);
+    if (shouldShowStartupRefreshNotice(payload)) {
+      viewer.showStartupRefreshNotice();
+    }
     viewer.scheduleIndexRefreshPoll();
     await viewer.renderDetail();
     prefetchNeighborPages();

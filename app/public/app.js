@@ -333,6 +333,10 @@ async function initViewerApp() {
 
   els.rebuildButton.addEventListener("click", async () => {
     setRebuildState(true, "Scanning manifests and local files...");
+    viewer.showPageLoadingModal({
+      title: "Rescanning library...",
+      message: "Rebuilding the SQLite cache from manifests and local files.",
+    });
     try {
       const response = await fetch("/api/rebuild", { method: "POST" });
       const payload = await response.json();
@@ -345,11 +349,14 @@ async function initViewerApp() {
       viewer.clearDataCaches();
       await refresh();
       setRebuildState(false, "");
+      viewer.hidePageLoadingModal();
       showRebuildModal("Rescan complete", "Manifest and local file scanning has finished.");
     } catch (error) {
       setRebuildState(false, "");
+      viewer.hidePageLoadingModal();
       showRebuildModal("Rescan failed", error.message || "Manifest and local file scanning failed.");
     } finally {
+      viewer.hidePageLoadingModal();
       if (els.rebuildButton.disabled) {
         setRebuildState(false, "");
       }

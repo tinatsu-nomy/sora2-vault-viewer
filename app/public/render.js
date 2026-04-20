@@ -488,6 +488,16 @@ function renderIndexStatus() {
     return;
   }
 
+  if (viewer.startupRefreshNoticeVisible) {
+    banner.className = "index-status-banner info";
+    banner.innerHTML = `
+      <strong class="index-status-title">Using Cached Data</strong>
+      <span class="index-status-text">If you updated files while the app was closed, click Rescan to refresh the library.</span>
+    `;
+    banner.classList.remove("hidden");
+    return;
+  }
+
   banner.className = "index-status-banner hidden";
   banner.innerHTML = "";
 }
