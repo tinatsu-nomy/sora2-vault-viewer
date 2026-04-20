@@ -68,9 +68,9 @@ function parseListParams(url) {
   const dateFrom = parseDateValue(url.searchParams.get("dateFrom"));
   const dateTo = parseDateValue(url.searchParams.get("dateTo"), { endOfDayIfDateOnly: true });
   const sort = url.searchParams.get("sort") || "date-desc";
-  const requestedLimit = Number(url.searchParams.get("limit") || 180);
+  const requestedLimit = Number(url.searchParams.get("limit") || 48);
   const requestedOffset = Number(url.searchParams.get("offset") || 0);
-  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 180, 240));
+  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 48, 48));
   const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
 
   return {

@@ -9,8 +9,10 @@
     <link rel="stylesheet" href="/styles.css?v=20260416c" />
   </head>
   <body>
+    <a class="skip-link" href="#mainContent">Skip to Main Content</a>
     <div class="shell">
       <div id="indexStatusBanner" class="index-status-banner hidden" aria-live="polite"></div>
+      <div id="clipboardStatus" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
       <header class="topbar">
         <div class="brand-block">
@@ -31,22 +33,12 @@
           <label class="field search-field">
             <span>Search</span>
             <div class="search-row">
-              <input id="query" type="search" placeholder="prompt / genId / postId / taskId / text content" />
+              <input id="query" name="query" type="search" autocomplete="off" spellcheck="false" placeholder="prompt / genId / postId / taskId / text content…" />
               <button id="clearQueryButton" type="button" class="secondary">Clear</button>
             </div>
           </label>
 
           <div class="toolbar-actions">
-            <label class="field compact toolbar-copy-order">
-              <span>Poster order</span>
-              <select id="copyPostersSort" title="Choose the sort order for copied poster usernames">
-                <option value="name-asc" selected>Name A→Z</option>
-                <option value="name-desc">Name Z→A</option>
-                <option value="posts-desc">Most posts</option>
-                <option value="posts-asc">Fewest posts</option>
-              </select>
-            </label>
-            <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
             <button id="rebuildButton" type="button" class="secondary">Rescan</button>
             <span id="rebuildStatus" class="toolbar-status" aria-live="polite"></span>
           </div>
@@ -54,32 +46,52 @@
 
         <div class="toolbar-toggle-row" aria-label="quick filters">
           <label class="toggle">
-            <input id="localOnly" type="checkbox" checked />
+            <input id="localOnly" name="localOnly" type="checkbox" checked />
             <span>Local only</span>
           </label>
 
           <label class="toggle">
-            <input id="withMedia" type="checkbox" />
+            <input id="withMedia" name="withMedia" type="checkbox" />
             <span>With video</span>
           </label>
 
           <label class="toggle">
-            <input id="withText" type="checkbox" />
+            <input id="withText" name="withText" type="checkbox" />
             <span>With text</span>
           </label>
 
           <label class="toggle">
-            <input id="showCameo" type="checkbox" checked />
+            <input id="showCameo" name="showCameo" type="checkbox" checked />
             <span>Show cameo</span>
           </label>
         </div>
 
-        <details class="filter-drawer" open>
+        <details class="toolbar-utility-row">
+          <summary>Clipboard</summary>
+          <div class="toolbar-utility-group" aria-label="clipboard helpers">
+            <div class="toolbar-utility-meta">
+              <strong>Clipboard</strong>
+              <span>Copy usernames from the current filtered result set.</span>
+            </div>
+            <label class="field compact toolbar-copy-order">
+              <span>Poster order</span>
+              <select id="copyPostersSort" name="copyPostersSort" autocomplete="off" title="Choose the sort order for copied poster usernames">
+                <option value="name-asc" selected>Name A→Z</option>
+                <option value="name-desc">Name Z→A</option>
+                <option value="posts-desc">Most posts</option>
+                <option value="posts-asc">Fewest posts</option>
+              </select>
+            </label>
+            <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
+          </div>
+        </details>
+
+        <details class="filter-drawer">
           <summary>Advanced filters and sorting</summary>
           <div class="toolbar-grid">
             <label class="field compact">
               <span>Sort</span>
-              <select id="sort">
+              <select id="sort" name="sort" autocomplete="off">
                 <option value="date-desc">Newest first</option>
                 <option value="date-asc">Oldest first</option>
                 <option value="views-desc">Most views</option>
@@ -96,22 +108,20 @@
 
             <label class="field compact">
               <span>Items per page</span>
-              <select id="pageSize">
+              <select id="pageSize" name="pageSize" autocomplete="off">
                 <option value="24" selected>24</option>
-                <option value="60">60</option>
-                <option value="120">120</option>
-                <option value="180">180</option>
+                <option value="48">48</option>
               </select>
             </label>
 
             <label class="field compact">
               <span>Date from</span>
-              <input id="dateFrom" type="date" />
+              <input id="dateFrom" name="dateFrom" type="date" autocomplete="off" />
             </label>
 
             <label class="field compact">
               <span>Date to</span>
-              <input id="dateTo" type="date" />
+              <input id="dateTo" name="dateTo" type="date" autocomplete="off" />
             </label>
 
             <div class="toolbar-secondary-actions">
@@ -121,7 +131,7 @@
         </details>
       </section>
 
-      <main class="content">
+      <main id="mainContent" class="content">
         <section class="gallery-section is-loading" aria-busy="true" data-loading-label="Loading library...">
           <div class="section-head">
             <div>

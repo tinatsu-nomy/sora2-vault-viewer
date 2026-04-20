@@ -117,7 +117,7 @@ function prefetchNeighborPages() {
 async function fetchIndex({ reason = "load", useCache = true } = {}) {
   const requestToken = ++viewer.indexRequestToken;
   const queryString = currentPageQueryString();
-  const loadingMessage = reason === "search" ? "Updating results..." : "Loading...";
+  const loadingMessage = reason === "search" ? "Updating results…" : "Loading…";
   const showGalleryLoading = reason !== "page" && reason !== "background-refresh";
 
   if (useCache && !state.indexStatus?.isRefreshing && viewer.pageCache.has(queryString)) {

@@ -178,7 +178,7 @@ async function initViewerApp() {
 
   function setRebuildState(isBusy, message = "") {
     els.rebuildButton.disabled = isBusy;
-    els.rebuildButton.textContent = isBusy ? "Rescanning..." : "Rescan";
+    els.rebuildButton.textContent = isBusy ? "Rescanning…" : "Rescan";
     els.rebuildStatus.textContent = message;
     els.rebuildStatus.classList.toggle("busy", isBusy);
   }
@@ -194,6 +194,14 @@ async function initViewerApp() {
   function hideRebuildModal() {
     els.rebuildModal.classList.add("hidden");
     els.rebuildModal.setAttribute("aria-hidden", "true");
+  }
+
+  function announceClipboardStatus(message) {
+    if (!els.clipboardStatus) return;
+    els.clipboardStatus.textContent = "";
+    window.setTimeout(() => {
+      els.clipboardStatus.textContent = String(message || "");
+    }, 20);
   }
 
   async function copyTextToClipboard(text) {
@@ -262,8 +270,14 @@ async function initViewerApp() {
     try {
       await copyTextToClipboard(text);
       button.textContent = "Copied";
+      announceClipboardStatus(kind === "chars"
+        ? "Copied visible character names to the clipboard."
+        : "Copied visible user source names to the clipboard.");
     } catch (error) {
       button.textContent = "Failed";
+      announceClipboardStatus(kind === "chars"
+        ? "Could not copy character names. Try again."
+        : "Could not copy user source names. Try again.");
     }
 
     window.setTimeout(() => {
@@ -280,8 +294,10 @@ async function initViewerApp() {
       const text = await posterUserListText();
       await copyTextToClipboard(text);
       button.textContent = "Copied";
+      announceClipboardStatus("Copied poster usernames to the clipboard.");
     } catch (error) {
       button.textContent = "Failed";
+      announceClipboardStatus("Could not copy poster usernames. Try again or check clipboard permissions.");
     }
 
     window.setTimeout(() => {
@@ -440,7 +456,7 @@ async function initViewerApp() {
   els.rebuildButton.addEventListener("click", async () => {
     setRebuildState(true, "Scanning manifests and local files...");
     viewer.showPageLoadingModal({
-      title: "Rescanning library...",
+      title: "Rescanning library…",
       message: "Rebuilding the SQLite cache from manifests and local files.",
     });
     try {

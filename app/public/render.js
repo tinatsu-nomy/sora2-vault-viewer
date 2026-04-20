@@ -100,7 +100,7 @@ function avatarDotMarkup(url) {
   const imageUrl = url || "/avatar-fallback.svg";
   return `
     <span class="avatar-dot" aria-hidden="true">
-      <img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/avatar-fallback.svg'">
+      <img src="${escapeHtml(imageUrl)}" alt="" width="32" height="32" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/avatar-fallback.svg'">
     </span>
   `;
 }
@@ -228,7 +228,7 @@ async function loadTranscriptContent(disclosure) {
   }
 
   content.dataset.loading = "1";
-  content.textContent = "Loading transcript...";
+  content.textContent = "Loading transcript…";
 
   try {
     const response = await fetch(txtUrl);
@@ -993,6 +993,11 @@ function renderPagination() {
 }
 
 async function renderDetail() {
+  const currentDetailVideo = els.detail.querySelector(".detail-player video");
+  if (currentDetailVideo) {
+    state.detailVideoMuted = currentDetailVideo.muted;
+  }
+
   if (!state.selectedId) {
     viewer.setSectionLoading(els.detailSection, false);
     els.detail.innerHTML = "Select a card to see its details here.";
@@ -1076,11 +1081,12 @@ async function renderDetail() {
   ]
     .filter(Boolean)
     .join("\n");
+  const detailVideoMutedAttr = state.detailVideoMuted ? " muted" : "";
 
   els.detail.innerHTML = `
     ${
       localMediaUrl
-        ? `<div class="detail-player"><video controls autoplay loop preload="metadata" playsinline src="${escapeHtml(localMediaUrl)}"></video></div>`
+        ? `<div class="detail-player"><video controls autoplay loop${detailVideoMutedAttr} preload="metadata" playsinline src="${escapeHtml(localMediaUrl)}"></video></div>`
         : '<div class="detail-card"><div class="subtle">No local MP4 was found. Use external links below if available.</div></div>'
     }
 
@@ -1182,6 +1188,7 @@ async function renderDetail() {
 
   const detailVideo = els.detail.querySelector(".detail-player video");
   if (detailVideo) {
+    state.detailVideoMuted = detailVideo.muted;
     const resolutionValue = els.detail.querySelector("[data-detail-resolution]");
     const ratioValue = els.detail.querySelector("[data-detail-ratio]");
     const metadataResolutionRow = els.detail.querySelector("[data-detail-metadata-resolution-row]");
@@ -1211,6 +1218,9 @@ async function renderDetail() {
     } else {
       detailVideo.addEventListener("loadedmetadata", syncActualMediaFacts, { once: true });
     }
+    detailVideo.addEventListener("volumechange", () => {
+      state.detailVideoMuted = detailVideo.muted;
+    });
     detailVideo.play().catch(() => {});
   }
 
