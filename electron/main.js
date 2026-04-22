@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const { app, BrowserWindow, dialog, shell } = require("electron");
 
 const ROOT = path.resolve(__dirname, "..");
+const SERVER_CWD = app.isPackaged ? process.resourcesPath : ROOT;
 const CONFIG_VERSION = 1;
 const APP_ICON_PATH = path.join(ROOT, "electron", "assets", "icon.png");
 const SERVER_ENTRY_PATH = path.join(ROOT, "app", "server.js");
@@ -68,7 +69,8 @@ async function ensureLocalServer() {
     `--max-old-space-size=${SERVER_MAX_OLD_SPACE_MB}`,
     SERVER_ENTRY_PATH,
   ], {
-    cwd: ROOT,
+    // In packaged builds, ROOT points at app.asar, which is a file and not a valid cwd.
+    cwd: SERVER_CWD,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
