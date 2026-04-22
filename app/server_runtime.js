@@ -42,7 +42,11 @@ const AVATAR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".
 const APP_VERSION = (() => {
   try {
     const parsed = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
-    return parsed?.version ? String(parsed.version) : null;
+    return parsed?.displayVersion
+      ? String(parsed.displayVersion)
+      : parsed?.version
+        ? String(parsed.version)
+        : null;
   } catch {
     return null;
   }
