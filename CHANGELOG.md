@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.6.1
+
+### Viewer Menu And Detail UX
+
+- Moved `Clipboard` and `Options` into a compact top-right `Menu`
+- Added the current app version inside that menu
+- Added avatar description toggles for `posted by` and `cameo` entries in the detail panel
+- Added likes and recent-post ordering for copied poster usernames
+- Added streaming manifest parsing so very large manifest JSON files can still be indexed
+
 ## v0.2.6
 
 ### Cache Workflow
