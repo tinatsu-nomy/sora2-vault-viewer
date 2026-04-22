@@ -4,6 +4,7 @@ dist-electron/
 *.exe
 
 # Local data and generated cache
+sora2_data
 sora2_data/
 app/data/
 
