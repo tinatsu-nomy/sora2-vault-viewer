@@ -54,6 +54,7 @@ viewer.els = {
   copyPostersSort: document.querySelector("#copyPostersSort"),
   copyPostersButton: document.querySelector("#copyPostersButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
+  renewOnStartToggle: document.querySelector("#renewOnStartToggle"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
   topnav: document.querySelector(".topnav"),
   indexStatusBanner: document.querySelector("#indexStatusBanner"),

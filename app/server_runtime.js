@@ -18,6 +18,7 @@ const MAX_PORT_ATTEMPTS = 20;
 const SQLITE_SCHEMA_VERSION = "6";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
+const SQLITE_RENEW_ON_START = process.env.SORA_SQLITE_RENEW_ON_START === "1";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
 const ROOT = process.env.SORA_VIEWER_ROOT
   ? path.resolve(process.env.SORA_VIEWER_ROOT)
@@ -31,6 +32,7 @@ const APP_DATA_DIR = process.env.SORA_APP_DATA_DIR
   : path.join(ROOT, "app", "data");
 const DB_PATH = process.env.SORA_SQLITE_PATH || path.join(APP_DATA_DIR, "sora-index.sqlite");
 const TXT_CACHE_PATH = path.join(APP_DATA_DIR, "txt-record-cache.json");
+const SQLITE_RENEW_MARKER_PATH = path.join(APP_DATA_DIR, "sqlite-renew-next-start.json");
 const AVATAR_DIR = path.join(DATA_DIR, "avatars");
 const CONFIG_PATH = process.env.SORA_CONFIG_PATH
   ? path.resolve(process.env.SORA_CONFIG_PATH)
@@ -43,6 +45,57 @@ function compactIndexForMemory(index) {
     stats: index.stats,
     items: [],
   };
+}
+
+function readRenewNextStartMarker() {
+  try {
+    const raw = fs.readFileSync(SQLITE_RENEW_MARKER_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : { requestedAt: null };
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    return {
+      requestedAt: null,
+      invalid: true,
+      error: error.message,
+    };
+  }
+}
+
+function isRenewNextStartScheduled(marker) {
+  return Boolean(marker && !marker.consumedAt && !marker.cancelledAt);
+}
+
+function consumeRenewNextStartMarker(marker) {
+  fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+  const payload = {
+    ...(marker && typeof marker === "object" ? marker : {}),
+    consumedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(SQLITE_RENEW_MARKER_PATH, JSON.stringify(payload, null, 2), "utf8");
+  return payload;
+}
+
+function scheduleRenewNextStart() {
+  fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+  const payload = {
+    requestedAt: new Date().toISOString(),
+    mode: "sqlite-renew-on-start",
+    consumedAt: null,
+    cancelledAt: null,
+  };
+  fs.writeFileSync(SQLITE_RENEW_MARKER_PATH, JSON.stringify(payload, null, 2), "utf8");
+  return payload;
+}
+
+function cancelRenewNextStart(marker) {
+  fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+  const payload = {
+    ...(marker && typeof marker === "object" ? marker : {}),
+    cancelledAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(SQLITE_RENEW_MARKER_PATH, JSON.stringify(payload, null, 2), "utf8");
+  return payload;
 }
 
 async function discoverSourceDirs(dataDir) {
@@ -72,6 +125,40 @@ const store = createStore({
   schemaVersion: SQLITE_SCHEMA_VERSION,
 });
 
+const persistedRenewMarker = readRenewNextStartMarker();
+const persistedRenewRequested = isRenewNextStartScheduled(persistedRenewMarker);
+const shouldRenewOnStart = SQLITE_RENEW_ON_START || persistedRenewRequested;
+const startupCacheState = {
+  renewRequested: shouldRenewOnStart,
+  renewCompleted: false,
+  renewError: null,
+  renewSource: SQLITE_RENEW_ON_START
+    ? "env"
+    : persistedRenewRequested
+      ? "next-start"
+      : null,
+  markerRequestedAt: persistedRenewMarker?.requestedAt || null,
+  markerInvalid: Boolean(persistedRenewMarker?.invalid),
+  markerConsumeError: null,
+};
+
+if (persistedRenewRequested) {
+  try {
+    consumeRenewNextStartMarker(persistedRenewMarker);
+  } catch (error) {
+    startupCacheState.markerConsumeError = error;
+  }
+}
+
+if (shouldRenewOnStart && ENABLE_SQLITE_CACHE) {
+  try {
+    store.clearPersistedCache();
+    startupCacheState.renewCompleted = true;
+  } catch (error) {
+    startupCacheState.renewError = error;
+  }
+}
+
 const serializers = createSerializers({
   debugMode: DEBUG_MODE,
   enableSqliteCache: ENABLE_SQLITE_CACHE,
@@ -93,7 +180,7 @@ const listingService = createListingService({
 });
 
 const indexState = createIndexState({
-  initialIndex: store.loadIndexMeta(),
+  initialIndex: shouldRenewOnStart ? null : store.loadIndexMeta(),
   buildIndex: async () => {
     const sourceDirs = await discoverSourceDirs(DATA_DIR);
     const builtIndex = await buildIndex({
@@ -416,6 +503,62 @@ async function handleRequest(request, response) {
       }
     }
 
+    if (url.pathname === "/api/renew-on-start" && request.method === "GET") {
+      const marker = readRenewNextStartMarker();
+      return json(response, 200, {
+        scheduled: isRenewNextStartScheduled(marker),
+        requestedAt: marker?.requestedAt || null,
+        consumedAt: marker?.consumedAt || null,
+        cancelledAt: marker?.cancelledAt || null,
+      });
+    }
+
+    if (url.pathname === "/api/renew-on-start" && request.method === "POST") {
+      if (!ENABLE_SQLITE_CACHE) {
+        return json(response, 409, {
+          error: "SQLite cache is disabled",
+          details: "Enable the SQLite cache before scheduling renew-on-start.",
+        });
+      }
+
+      try {
+        const marker = scheduleRenewNextStart();
+        return json(response, 200, {
+          ok: true,
+          scheduled: true,
+          requestedAt: marker.requestedAt,
+        });
+      } catch (error) {
+        return json(response, 500, {
+          error: "Failed to schedule renew-on-start",
+          details: error.message,
+        });
+      }
+    }
+
+    if (url.pathname === "/api/renew-on-start" && request.method === "DELETE") {
+      if (!ENABLE_SQLITE_CACHE) {
+        return json(response, 409, {
+          error: "SQLite cache is disabled",
+          details: "Enable the SQLite cache before changing renew-on-start.",
+        });
+      }
+
+      try {
+        const marker = cancelRenewNextStart(readRenewNextStartMarker());
+        return json(response, 200, {
+          ok: true,
+          scheduled: false,
+          cancelledAt: marker.cancelledAt,
+        });
+      } catch (error) {
+        return json(response, 500, {
+          error: "Failed to cancel renew-on-start",
+          details: error.message,
+        });
+      }
+    }
+
     if (url.pathname === "/avatar") {
       const index = await getIndexForRead();
       const itemId = decodeURIComponent(url.searchParams.get("id") || "");
@@ -550,6 +693,21 @@ function startServer(port = DEFAULT_PORT, attempt = 0) {
     console.log(`Sora2 Vault Viewer running at http://${displayHost}:${actualPort}`);
     for (const line of startupLogLines(actualPort)) {
       console.log(line);
+    }
+    if (startupCacheState.renewRequested && !ENABLE_SQLITE_CACHE) {
+      console.log("SQLite renew-on-start was requested, but the SQLite cache is disabled.");
+    } else if (startupCacheState.markerInvalid) {
+      console.warn("The persisted renew-on-start marker was unreadable. Treating it as a one-shot renew request.");
+    } else if (startupCacheState.markerConsumeError) {
+      console.warn(`Failed to consume the renew-on-start marker: ${startupCacheState.markerConsumeError.message}`);
+    } else if (startupCacheState.renewRequested && startupCacheState.renewError) {
+      console.warn(`SQLite renew-on-start failed: ${startupCacheState.renewError.message}`);
+    } else if (startupCacheState.renewCompleted) {
+      console.log(
+        startupCacheState.renewSource === "next-start"
+          ? "SQLite renew-on-start cleared the cached database from a next-start request before rebuilding."
+          : "SQLite renew-on-start cleared the cached database before rebuilding.",
+      );
     }
     if (indexState.getCurrent()) {
       void logIndexSummary();

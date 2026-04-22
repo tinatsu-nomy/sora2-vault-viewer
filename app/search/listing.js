@@ -159,10 +159,22 @@ function createListingService({
       const rightName = String(right.posterUsername || "");
       const leftCount = Number(left.postCount || 0);
       const rightCount = Number(right.postCount || 0);
+      const leftLatest = Number(left.latestPostDateSortMs ?? Number.MIN_SAFE_INTEGER);
+      const rightLatest = Number(right.latestPostDateSortMs ?? Number.MIN_SAFE_INTEGER);
+      const leftLikes = Number(left.totalLikeCount || 0);
+      const rightLikes = Number(right.totalLikeCount || 0);
 
       switch (normalizedSort) {
         case "name-desc":
           return rightName.localeCompare(leftName, "ja");
+        case "likes-desc":
+          return rightLikes - leftLikes || leftName.localeCompare(rightName, "ja");
+        case "likes-asc":
+          return leftLikes - rightLikes || leftName.localeCompare(rightName, "ja");
+        case "recent-post-desc":
+          return rightLatest - leftLatest || leftName.localeCompare(rightName, "ja");
+        case "recent-post-asc":
+          return leftLatest - rightLatest || leftName.localeCompare(rightName, "ja");
         case "posts-desc":
           return rightCount - leftCount || leftName.localeCompare(rightName, "ja");
         case "posts-asc":
@@ -318,6 +330,14 @@ function createListingService({
         switch (posterSort) {
           case "name-desc":
             return "ORDER BY items.poster_username COLLATE NOCASE DESC";
+          case "likes-desc":
+            return "ORDER BY totalLikeCount DESC, items.poster_username COLLATE NOCASE ASC";
+          case "likes-asc":
+            return "ORDER BY totalLikeCount ASC, items.poster_username COLLATE NOCASE ASC";
+          case "recent-post-desc":
+            return "ORDER BY latestPostDateSortMs DESC, items.poster_username COLLATE NOCASE ASC";
+          case "recent-post-asc":
+            return "ORDER BY latestPostDateSortMs ASC, items.poster_username COLLATE NOCASE ASC";
           case "posts-desc":
             return "ORDER BY postCount DESC, items.poster_username COLLATE NOCASE ASC";
           case "posts-asc":
@@ -341,9 +361,20 @@ function createListingService({
       const posterUsername = String(item.posterUsername || "").trim();
       if (!posterUsername) continue;
       if (!posterRowsByUsername.has(posterUsername)) {
-        posterRowsByUsername.set(posterUsername, { posterUsername, postCount: 0 });
+        posterRowsByUsername.set(posterUsername, {
+          posterUsername,
+          postCount: 0,
+          latestPostDateSortMs: Number.MIN_SAFE_INTEGER,
+          totalLikeCount: 0,
+        });
       }
-      posterRowsByUsername.get(posterUsername).postCount += 1;
+      const row = posterRowsByUsername.get(posterUsername);
+      row.postCount += 1;
+      row.latestPostDateSortMs = Math.max(
+        row.latestPostDateSortMs,
+        Number(item.dateSortMs ?? Number.MIN_SAFE_INTEGER),
+      );
+      row.totalLikeCount += Number(item.likeCount || 0);
     }
 
     return sortPosterRows([...posterRowsByUsername.values()], posterSort)

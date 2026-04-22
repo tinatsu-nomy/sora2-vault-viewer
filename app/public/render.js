@@ -60,6 +60,13 @@ function normalizedPromptText(value) {
   return text;
 }
 
+function normalizedProfileDescription(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\(?none\)?$/i.test(text)) return "";
+  return text;
+}
+
 function displayTitle(item) {
   const prompt = normalizedPromptText(item?.prompt);
   if (prompt) return prompt;
@@ -102,6 +109,23 @@ function avatarDotMarkup(url) {
     <span class="avatar-dot" aria-hidden="true">
       <img src="${escapeHtml(imageUrl)}" alt="" width="32" height="32" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/avatar-fallback.svg'">
     </span>
+  `;
+}
+
+function avatarDescriptionButtonMarkup(url, label, description, className = "") {
+  const normalizedDescription = normalizedProfileDescription(description);
+  const descriptionText = normalizedDescription || "No avatar description available.";
+  return `
+    <button
+      type="button"
+      class="detail-avatar-button ${escapeHtml(className)}"
+      data-avatar-description="${escapeHtml(descriptionText)}"
+      data-avatar-label="${escapeHtml(label)}"
+      aria-expanded="false"
+      title="Show avatar description for ${escapeHtml(label)}"
+    >
+      ${avatarDotMarkup(url)}
+    </button>
   `;
 }
 
@@ -154,18 +178,22 @@ function userStackSearchMarkup({
   primaryQuery,
   secondaryLabel = "",
   secondaryQuery = "",
+  avatarDescription = "",
 }) {
   const primary = textSearchButtonMarkup(primaryLabel, primaryQuery, "detail-user-line detail-user-line-primary");
   const secondary = secondaryLabel
     ? textSearchButtonMarkup(secondaryLabel, secondaryQuery, "detail-user-line detail-user-owner")
     : "";
   return `
-    <span class="detail-user-inline-group">
-      ${avatarDotMarkup(avatarUrl)}
-      <span class="detail-user-text-stack">
-        ${primary}
-        ${secondary}
+    <span class="detail-user-with-description" data-avatar-description-card>
+      <span class="detail-user-inline-group">
+        ${avatarDescriptionButtonMarkup(avatarUrl, primaryLabel, avatarDescription)}
+        <span class="detail-user-text-stack">
+          ${primary}
+          ${secondary}
+        </span>
       </span>
+      <span class="detail-avatar-description hidden" data-avatar-description-panel aria-live="polite"></span>
     </span>
   `;
 }
@@ -177,6 +205,8 @@ function cameoEntries(item) {
       .map((profile) => ({
         username: profile.username,
         userId: profile.userId || null,
+        displayName: profile.displayName || null,
+        description: profile.description || null,
         ownerUsername: profile.ownerUsername || null,
       }));
   }
@@ -186,6 +216,8 @@ function cameoEntries(item) {
     .map((username) => ({
       username,
       userId: null,
+      displayName: null,
+      description: null,
       ownerUsername: null,
     }));
 }
@@ -210,6 +242,7 @@ function cameoSearchMarkup(item) {
         primaryQuery: entry.username,
         secondaryLabel: ownerLabel && ownerLabel !== `@${entry.username}` ? `owned by ${ownerLabel}` : "",
         secondaryQuery: ownerLabel,
+        avatarDescription: entry.description,
       });
     })
     .join("");
@@ -1036,13 +1069,14 @@ async function renderDetail() {
   const posterUsername = formatPosterUsername(item);
   const cameoUsernames = formatCameoUsernames(item);
   const posterInline = posterUsername ? userInlineMarkup(posterUsername, avatarUrlForItem(item, "poster")) : "";
-  const posterSearch = posterUsername
-    ? userStackSearchMarkup({
-      avatarUrl: avatarUrlForItem(item, "poster"),
-      primaryLabel: posterUsername,
-      primaryQuery: posterUsername,
-    })
-    : "";
+    const posterSearch = posterUsername
+      ? userStackSearchMarkup({
+        avatarUrl: avatarUrlForItem(item, "poster"),
+        primaryLabel: posterUsername,
+        primaryQuery: posterUsername,
+        avatarDescription: item.posterDescription,
+      })
+      : "";
   const cameoInline = cameoInlineMarkup(item);
   const cameoSearch = cameoSearchMarkup(item);
   const summaryChips = [

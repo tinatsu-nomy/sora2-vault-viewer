@@ -126,6 +126,19 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     return database;
   }
 
+  function clearPersistedCache() {
+    resetLiveDatabaseHandle();
+    removeSqliteArtifacts(dbPath);
+    removeSqliteArtifacts(`${dbPath}.next`);
+    removeSqliteArtifacts(`${dbPath}.bak`);
+    status = {
+      enabled: false,
+      path: dbPath,
+      savedItems: 0,
+      error: null,
+    };
+  }
+
   function getDb() {
     if (!enabled) return null;
     if (db) return db;
@@ -356,7 +369,9 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     const sql = `
       SELECT
         items.poster_username AS posterUsername,
-        COUNT(*) AS postCount
+        COUNT(*) AS postCount,
+        MAX(COALESCE(items.date_sort_ms, -9223372036854775808)) AS latestPostDateSortMs,
+        SUM(COALESCE(items.like_count, 0)) AS totalLikeCount
       ${fromClause}
       ${whereClause}
       AND COALESCE(items.poster_username, '') <> ''
@@ -389,6 +404,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
   }
 
   return {
+    clearPersistedCache,
     getStatus,
     getDb,
     persistIndex,

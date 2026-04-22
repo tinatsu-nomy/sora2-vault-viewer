@@ -30,8 +30,9 @@ process.env.SORA_ENABLE_SQLITE_CACHE = "1";
 process.env.SORA_BIND_HOST = "127.0.0.1";
 process.env.SORA_APP_DATA_DIR = APP_DATA_DIR;
 
-function loadStartServer({ dbPath } = {}) {
+function loadStartServer({ dbPath, renewOnStart = false } = {}) {
   process.env.SORA_SQLITE_PATH = dbPath;
+  process.env.SORA_SQLITE_RENEW_ON_START = renewOnStart ? "1" : "0";
   const serverPath = path.join(ROOT, "app", "server.js");
   const runtimePath = path.join(ROOT, "app", "server_runtime.js");
   delete require.cache[require.resolve(serverPath)];
@@ -43,21 +44,8 @@ function createDirectoryLink(targetDir, linkPath) {
   fs.symlinkSync(targetDir, linkPath, process.platform === "win32" ? "junction" : "dir");
 }
 
-function writeFixtureData() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(LINK_TARGETS_DIR, { recursive: true });
-  fs.mkdirSync(PROFILE_DIR, { recursive: true });
-  fs.mkdirSync(LIKED_DIR, { recursive: true });
-  fs.mkdirSync(REAL_CAMEOS_DIR, { recursive: true });
-  fs.mkdirSync(REAL_CAMEOS_DRAFT_DIR, { recursive: true });
-  createDirectoryLink(REAL_CAMEOS_DIR, CAMEOS_DIR);
-  createDirectoryLink(REAL_CAMEOS_DRAFT_DIR, CAMEOS_DRAFT_DIR);
-  fs.mkdirSync(USER_DIR, { recursive: true });
-  fs.mkdirSync(CHAR_DIR, { recursive: true });
-  fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
-  fs.mkdirSync(CHARACTER_DIR, { recursive: true });
-
-  const manifest = {
+function baseFixtureManifest() {
+  return {
     exported_at: "2026-04-15T00:00:00Z",
     total: 7,
     scan_sources: ["v2_profile", "v2_liked", "v2_user"],
@@ -75,7 +63,12 @@ function writeFixtureData() {
         duration: 5,
         isLiked: true,
         _raw: {
-          profile: { username: "smoke_user", user_id: "user-smoke" },
+          profile: {
+            username: "smoke_user",
+            user_id: "user-smoke",
+            display_name: "Smoke User",
+            description: "Primary smoke profile description.",
+          },
           post: {
             id: "s_smoke123",
             text: "Smoke test prompt",
@@ -84,7 +77,12 @@ function writeFixtureData() {
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
             cameo_profiles: [
-              { username: "cameo.source.hero", user_id: "user-cameo-hero" },
+              {
+                username: "cameo.source.hero",
+                user_id: "user-cameo-hero",
+                display_name: "Friendly Hero",
+                description: "Friendly cameo hero description.",
+              },
             ],
           },
         },
@@ -102,7 +100,12 @@ function writeFixtureData() {
         duration: 5,
         isLiked: true,
         _raw: {
-          profile: { username: "smoke_user", user_id: "user-smoke" },
+          profile: {
+            username: "smoke_user",
+            user_id: "user-smoke",
+            display_name: "Smoke User",
+            description: "Primary smoke profile description.",
+          },
           post: {
             id: "s_smoke123",
             text: "Smoke test prompt",
@@ -111,7 +114,12 @@ function writeFixtureData() {
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
             cameo_profiles: [
-              { username: "cameo.source.hero", user_id: "user-cameo-hero" },
+              {
+                username: "cameo.source.hero",
+                user_id: "user-cameo-hero",
+                display_name: "Friendly Hero",
+                description: "Friendly cameo hero description.",
+              },
             ],
           },
         },
@@ -226,12 +234,31 @@ function writeFixtureData() {
       },
     ],
   };
+}
 
+function resetFixtureManifest() {
   fs.writeFileSync(
     path.join(DATA_DIR, MANIFEST_FILE_NAME),
-    JSON.stringify(manifest, null, 2),
+    JSON.stringify(baseFixtureManifest(), null, 2),
     "utf8",
   );
+}
+
+function writeFixtureData() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(LINK_TARGETS_DIR, { recursive: true });
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  fs.mkdirSync(LIKED_DIR, { recursive: true });
+  fs.mkdirSync(REAL_CAMEOS_DIR, { recursive: true });
+  fs.mkdirSync(REAL_CAMEOS_DRAFT_DIR, { recursive: true });
+  createDirectoryLink(REAL_CAMEOS_DIR, CAMEOS_DIR);
+  createDirectoryLink(REAL_CAMEOS_DRAFT_DIR, CAMEOS_DRAFT_DIR);
+  fs.mkdirSync(USER_DIR, { recursive: true });
+  fs.mkdirSync(CHAR_DIR, { recursive: true });
+  fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
+  fs.mkdirSync(CHARACTER_DIR, { recursive: true });
+
+  resetFixtureManifest();
 
   fs.writeFileSync(
     path.join(PROFILE_DIR, "2026-04-15_gen_smoke123.mp4"),
@@ -394,6 +421,29 @@ function appendRestartFixtureData() {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
 }
 
+function appendRenewFixtureData() {
+  const manifestPath = path.join(DATA_DIR, MANIFEST_FILE_NAME);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  manifest.total += 1;
+  manifest.items.push({
+    source: "v2_profile",
+    genId: "gen_after_renew",
+    postId: "s_after_renew",
+    date: "2026-04-18",
+    prompt: "Loaded after renew",
+    _raw: {
+      profile: { username: "renew_user" },
+      post: {
+        id: "s_after_renew",
+        text: "Loaded after renew",
+        cameo_profiles: [],
+        attachments: [{ generation_id: "gen_after_renew" }],
+      },
+    },
+  });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+}
+
 function waitForServer(server, { rejectOnError = true } = {}) {
   return new Promise((resolve, reject) => {
     if (server.listening) {
@@ -545,10 +595,53 @@ async function assertRestartUsesCachedIndexUntilRebuild() {
   }
 }
 
+async function assertRenewOnStartForcesFreshRebuild() {
+  const renewDbPath = path.join(TMP_ROOT, "renew.sqlite");
+  const firstStartServer = loadStartServer({ dbPath: renewDbPath });
+  const firstServer = firstStartServer(PORT);
+
+  try {
+    await waitForServer(firstServer);
+    const firstPayload = await fetchIndexPayload(PORT);
+    assert.equal(firstPayload.stats.totalItems, 11, "Expected renew fixture warmup to build the current cache");
+    const scheduledResponse = await request(`http://127.0.0.1:${PORT}/api/renew-on-start`, { method: "POST" });
+    assert.equal(scheduledResponse.status, 200, "Expected /api/renew-on-start to return 200");
+    const scheduledPayload = JSON.parse(scheduledResponse.body);
+    assert.equal(scheduledPayload.ok, true, "Expected renew-on-start scheduling response to confirm success");
+  } finally {
+    await new Promise((resolve) => firstServer.close(resolve));
+  }
+
+  appendRenewFixtureData();
+
+  const renewedStartServer = loadStartServer({ dbPath: renewDbPath });
+  const renewedServer = renewedStartServer(PORT);
+  try {
+    await waitForServer(renewedServer);
+    const renewedPayload = await fetchIndexPayload(PORT);
+    assert.equal(
+      renewedPayload.stats.totalItems,
+      12,
+      "Expected renew-on-start to ignore the old SQLite cache and rebuild immediately",
+    );
+    assert(
+      renewedPayload.items.some((item) => item.genId === "gen_after_renew"),
+      "Expected renew-on-start to include items added after the previous cached build",
+    );
+  } finally {
+    await new Promise((resolve) => renewedServer.close(resolve));
+  }
+  const renewMarkerPath = path.join(APP_DATA_DIR, "sqlite-renew-next-start.json");
+  const renewMarker = JSON.parse(fs.readFileSync(renewMarkerPath, "utf8"));
+  assert(renewMarker.consumedAt, "Expected the renew-on-start marker to be consumed after the next startup");
+}
+
 async function run() {
   writeFixtureData();
   await assertPortRetryWorks();
   await assertRestartUsesCachedIndexUntilRebuild();
+  await assertRenewOnStartForcesFreshRebuild();
+  resetFixtureManifest();
   const startServer = loadStartServer({ dbPath: path.join(TMP_ROOT, "main.sqlite") });
   const server = startServer(PORT);
 
@@ -556,8 +649,8 @@ async function run() {
     await waitForServer(server);
 
     const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
-    assert.equal(indexPayload.items.length, 11, "Expected all manifest and local-only fixture items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 11, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.items.length, 10, "Expected all base manifest and local-only fixture items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 10, "Expected stats to report all indexed items");
     assert.equal(indexPayload.stats.withLocalMedia, 6, "Expected merged items plus char and cameos sources to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
     assert(indexPayload.stats.sourceOrder.includes("v2_cameos"), "Expected cameos sources to be included in source order");
@@ -663,6 +756,46 @@ async function run() {
     );
     assert.equal(mergedFilterPayload.items.filter((item) => item.genId === "gen_smoke123").length, 1, "Expected shared items to stay deduped across multiple selected filters");
 
+    const recentPostersPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/posters?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&posterSort=recent-post-desc`,
+      "Expected poster recency sort to return 200",
+    );
+    assert.deepEqual(
+      recentPostersPayload.items,
+      ["smoke_user", "other_user", "fallback_alpha", "literal_marker", "fallback_beta", "bucket_user"],
+      "Expected poster usernames to sort by most recent post first",
+    );
+
+    const oldestPostersPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/posters?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&posterSort=recent-post-asc`,
+      "Expected oldest poster recency sort to return 200",
+    );
+    assert.deepEqual(
+      oldestPostersPayload.items,
+      ["bucket_user", "fallback_beta", "literal_marker", "fallback_alpha", "other_user", "smoke_user"],
+      "Expected poster usernames to sort by oldest post first",
+    );
+
+    const mostLikedPostersPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/posters?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&posterSort=likes-desc`,
+      "Expected poster like sort to return 200",
+    );
+    assert.deepEqual(
+      mostLikedPostersPayload.items,
+      ["smoke_user", "bucket_user", "other_user", "fallback_alpha", "fallback_beta", "literal_marker"],
+      "Expected poster usernames to sort by total likes descending",
+    );
+
+    const fewestLikedPostersPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/posters?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&posterSort=likes-asc`,
+      "Expected ascending poster like sort to return 200",
+    );
+    assert.deepEqual(
+      fewestLikedPostersPayload.items,
+      ["fallback_alpha", "fallback_beta", "literal_marker", "other_user", "bucket_user", "smoke_user"],
+      "Expected poster usernames to sort by total likes ascending",
+    );
+
     const fallbackSearchPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`,
       "Expected fallback prompt search to return 200",
@@ -687,10 +820,12 @@ async function run() {
     );
     assert.equal(detailPayload.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
-    assert.equal(detailPayload.local.txtUrl, "/media?id=gen_smoke123&kind=txt");
-    assert.equal(detailPayload.cameoProfiles.length, 1, "Expected cameo profile metadata to be preserved");
-    assert.equal(detailPayload.cameoProfiles[0].username, "cameo.source.hero");
-    assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
+      assert.equal(detailPayload.local.txtUrl, "/media?id=gen_smoke123&kind=txt");
+      assert.equal(detailPayload.cameoProfiles.length, 1, "Expected cameo profile metadata to be preserved");
+      assert.equal(detailPayload.cameoProfiles[0].username, "cameo.source.hero");
+      assert.equal(detailPayload.posterDescription, "Primary smoke profile description.");
+      assert.equal(detailPayload.cameoProfiles[0].description, "Friendly cameo hero description.");
+      assert.equal(fs.existsSync(path.join(APP_DATA_DIR, "txt-record-cache.json")), true, "Expected TXT cache file to be created");
 
     const ambiguousDetailPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(ambiguousItem.id)}`,

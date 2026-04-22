@@ -15,6 +15,8 @@ const {
   listManifestFiles,
   manifestDedupeKeyFromItem,
   parseManifestItem,
+  readManifestDescriptor,
+  streamManifestItems,
 } = require("./indexing/manifest");
 const { attachLocalFiles } = require("./indexing/local-match");
 const { createTxtRecordCache } = require("./indexing/text");
@@ -55,6 +57,16 @@ function countUniqueCameoProfiles(entry) {
   return [...new Set(usernames)].length;
 }
 
+function mergeProfileMetadata(baseProfile, incomingProfile) {
+  return {
+    username: baseProfile?.username || incomingProfile?.username || null,
+    userId: baseProfile?.userId || incomingProfile?.userId || null,
+    displayName: baseProfile?.displayName || incomingProfile?.displayName || null,
+    description: baseProfile?.description || incomingProfile?.description || null,
+    ownerUsername: baseProfile?.ownerUsername || incomingProfile?.ownerUsername || null,
+  };
+}
+
 function mergeManifestEntries(baseEntry, incomingEntry) {
   const sourceMemberships = normalizeSourceMemberships([
     ...(baseEntry.sourceMemberships || [baseEntry.source].filter(Boolean)),
@@ -72,16 +84,16 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     ...(baseEntry.cameoOwnerUsernames || []),
     ...(incomingEntry.cameoOwnerUsernames || []),
   ])].filter(Boolean);
-  const cameoProfiles = [
-    ...new Map(
-      [
-        ...(baseEntry.cameoProfiles || []),
-        ...(incomingEntry.cameoProfiles || []),
-      ]
-        .filter((profile) => profile?.username)
-        .map((profile) => [profile.username, profile]),
-    ).values(),
-  ];
+  const cameoProfilesByUsername = new Map();
+  for (const profile of [...(baseEntry.cameoProfiles || []), ...(incomingEntry.cameoProfiles || [])]) {
+    if (!profile?.username) continue;
+    const existingProfile = cameoProfilesByUsername.get(profile.username);
+    cameoProfilesByUsername.set(
+      profile.username,
+      existingProfile ? mergeProfileMetadata(existingProfile, profile) : profile,
+    );
+  }
+  const cameoProfiles = [...cameoProfilesByUsername.values()];
   const idTokens = [...new Set([
     ...(baseEntry.idTokens || []),
     ...(incomingEntry.idTokens || []),
@@ -110,6 +122,8 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     viewCount: typeof baseEntry.viewCount === "number" ? baseEntry.viewCount : incomingEntry.viewCount,
     posterUsername: baseEntry.posterUsername || incomingEntry.posterUsername || null,
     profileUserId: baseEntry.profileUserId || incomingEntry.profileUserId || null,
+    posterDisplayName: baseEntry.posterDisplayName || incomingEntry.posterDisplayName || null,
+    posterDescription: baseEntry.posterDescription || incomingEntry.posterDescription || null,
     ownerUsername: baseEntry.ownerUsername || incomingEntry.ownerUsername || null,
     ownerUsernames,
     cameoOwnerUsernames,
@@ -135,9 +149,15 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
   const txtRecordCache = createTxtRecordCache(txtCachePath);
 
   for (const manifestPath of manifestFiles) {
-    let raw;
     try {
-      raw = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+      const descriptor = await readManifestDescriptor(manifestPath);
+      manifestDescriptors.push({
+        file: descriptor.file,
+        exportedAt: descriptor.exportedAt,
+        exportedAtMs: parseManifestExportedAt(descriptor.exportedAt),
+        total: descriptor.total,
+        scanSources: descriptor.scanSources,
+      });
     } catch (error) {
       manifestErrors.push({
         file: manifestPath,
@@ -145,14 +165,6 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
       });
       continue;
     }
-
-    manifestDescriptors.push({
-      file: manifestPath,
-      exportedAt: raw.exported_at,
-      exportedAtMs: parseManifestExportedAt(raw.exported_at),
-      total: raw.total,
-      scanSources: raw.scan_sources,
-    });
   }
 
   manifestDescriptors.sort(compareManifestPriority);
@@ -164,53 +176,49 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
   })));
 
   for (const descriptor of manifestDescriptors) {
-    let raw;
     try {
-      raw = JSON.parse(await fsp.readFile(descriptor.file, "utf8"));
+      await streamManifestItems(descriptor.file, async (item, itemIndex) => {
+        const dedupeKey = manifestDedupeKeyFromItem(item);
+        const entry = parseManifestItem(item, descriptor.file, descriptor.exportedAt, itemIndex);
+        if (dedupeKey && seenManifestKeys.has(dedupeKey)) {
+          const existingEntryId = seenManifestKeys.get(dedupeKey);
+          const existingEntry = entries.get(existingEntryId);
+          if (existingEntry) {
+            const mergedEntry = mergeManifestEntries(entry, existingEntry);
+            entries.set(existingEntryId, mergedEntry);
+            for (const token of [
+              mergedEntry.id,
+              mergedEntry.genId,
+              mergedEntry.generationId,
+              mergedEntry.taskId,
+              mergedEntry.postId,
+              ...mergedEntry.idTokens,
+            ]) {
+              addLookup(lookupMap, token, existingEntryId);
+            }
+          }
+          return;
+        }
+
+        if (dedupeKey) seenManifestKeys.set(dedupeKey, entry.id);
+        entries.set(entry.id, entry);
+        for (const token of [
+          entry.id,
+          entry.genId,
+          entry.generationId,
+          entry.taskId,
+          entry.postId,
+          ...entry.idTokens,
+        ]) {
+          addLookup(lookupMap, token, entry.id);
+        }
+      });
     } catch (error) {
       manifestErrors.push({
         file: descriptor.file,
         error: `${error.code || "JSON_ERROR"}: ${error.message}`,
       });
       continue;
-    }
-
-    const manifestItems = Array.isArray(raw.items) ? raw.items : [];
-    for (let itemIndex = manifestItems.length - 1; itemIndex >= 0; itemIndex -= 1) {
-      const item = manifestItems[itemIndex];
-      const dedupeKey = manifestDedupeKeyFromItem(item);
-      const entry = parseManifestItem(item, descriptor.file, descriptor.exportedAt, itemIndex);
-      if (dedupeKey && seenManifestKeys.has(dedupeKey)) {
-        const existingEntryId = seenManifestKeys.get(dedupeKey);
-        const existingEntry = entries.get(existingEntryId);
-        if (existingEntry) {
-          const mergedEntry = mergeManifestEntries(existingEntry, entry);
-          entries.set(existingEntryId, mergedEntry);
-          for (const token of [
-            mergedEntry.id,
-            mergedEntry.genId,
-            mergedEntry.generationId,
-            mergedEntry.taskId,
-            mergedEntry.postId,
-            ...mergedEntry.idTokens,
-          ]) {
-            addLookup(lookupMap, token, existingEntryId);
-          }
-        }
-        continue;
-      }
-      if (dedupeKey) seenManifestKeys.set(dedupeKey, entry.id);
-      entries.set(entry.id, entry);
-      for (const token of [
-        entry.id,
-        entry.genId,
-        entry.generationId,
-        entry.taskId,
-        entry.postId,
-        ...entry.idTokens,
-      ]) {
-        addLookup(lookupMap, token, entry.id);
-      }
     }
   }
 

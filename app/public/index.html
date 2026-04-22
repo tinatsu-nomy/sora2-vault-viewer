@@ -6,7 +6,7 @@
     <title>Sora2 Vault Viewer</title>
     <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128.png" />
     <link rel="apple-touch-icon" href="/favicon-128.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260416c" />
+    <link rel="stylesheet" href="/styles.css?v=20260422a" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to Main Content</a>
@@ -78,11 +78,29 @@
               <select id="copyPostersSort" name="copyPostersSort" autocomplete="off" title="Choose the sort order for copied poster usernames">
                 <option value="name-asc" selected>Name A→Z</option>
                 <option value="name-desc">Name Z→A</option>
+                <option value="likes-desc">Most likes</option>
+                <option value="likes-asc">Fewest likes</option>
+                <option value="recent-post-desc">Recently posted</option>
+                <option value="recent-post-asc">Oldest post first</option>
                 <option value="posts-desc">Most posts</option>
                 <option value="posts-asc">Fewest posts</option>
               </select>
             </label>
             <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
+          </div>
+        </details>
+
+        <details class="toolbar-utility-row">
+          <summary>Options</summary>
+          <div class="toolbar-utility-group" aria-label="startup options">
+            <div class="toolbar-utility-meta">
+              <strong>Startup</strong>
+              <span>Control one-shot maintenance actions for the next app launch.</span>
+            </div>
+            <label class="toggle">
+              <input id="renewOnStartToggle" name="renewOnStartToggle" type="checkbox" />
+              <span>Renew next start</span>
+            </label>
           </div>
         </details>
 
@@ -185,8 +203,8 @@
     </div>
 
     <script src="/state.js?v=20260416c" defer></script>
-    <script src="/render.js?v=20260416c" defer></script>
+    <script src="/render.js?v=20260422a" defer></script>
     <script src="/api.js?v=20260416c" defer></script>
-    <script src="/app.js?v=20260416c" defer></script>
+    <script src="/app.js?v=20260422a" defer></script>
   </body>
 </html>

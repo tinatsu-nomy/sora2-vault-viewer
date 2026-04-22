@@ -155,6 +155,7 @@ Optional environment variables:
 - `SORA_APP_DATA_DIR`: override the directory used for SQLite, TXT cache, and the Electron settings file
 - `SORA_ENABLE_SQLITE_CACHE`: defaults to enabled. Set `0` to disable the local SQLite cache
 - `SORA_SQLITE_PATH`: override the SQLite database file path
+- `SORA_SQLITE_RENEW_ON_START`: set `1` to delete the cached SQLite database before startup and force a full rebuild from manifests and local files
 
 Common examples:
 
@@ -172,6 +173,12 @@ npm start
 ```powershell
 # custom data directory
 $ENV:SORA_DATA_DIR = "D:\SoraExports\sora2_data"
+npm start
+```
+
+```powershell
+# force a fresh SQLite rebuild on startup
+$ENV:SORA_SQLITE_RENEW_ON_START = "1"
 npm start
 ```
 
@@ -217,6 +224,7 @@ If these conditions are not met, the files can still appear as `local-only` item
 
 - If new manifests or files do not appear, click `Rescan` and then check `Loaded manifests`
 - On large libraries, startup may show cached results from the last completed scan until you click `Rescan`
+- Use the `Renew next start` checkbox when you want the next app launch to behave like `SORA_SQLITE_RENEW_ON_START=1` once and then return to normal cached startup behavior
 - If a manifest is malformed, the viewer skips it and continues indexing the remaining files
 - If the UI shows an index, detail, or rebuild error, fix the underlying file issue and try `Rescan` again
 - Run `npm run check` for syntax validation and `npm test` for the smoke test fixture

@@ -183,6 +183,31 @@ async function initViewerApp() {
     els.rebuildStatus.classList.toggle("busy", isBusy);
   }
 
+  function setRenewOnStartState({ isBusy = false, scheduled = null } = {}) {
+    if (!els.renewOnStartToggle) return;
+    els.renewOnStartToggle.disabled = isBusy;
+    if (typeof scheduled === "boolean") {
+      els.renewOnStartToggle.checked = scheduled;
+    }
+  }
+
+  async function loadRenewOnStartState() {
+    if (!els.renewOnStartToggle) return;
+    try {
+      const response = await fetch("/api/renew-on-start");
+      const payload = await response.json();
+      if (!response.ok) {
+        const message = payload?.details
+          ? `${payload.error || "Failed to load renew-on-start state"}: ${payload.details}`
+          : payload?.error || "Failed to load renew-on-start state";
+        throw new Error(message);
+      }
+      setRenewOnStartState({ scheduled: Boolean(payload?.scheduled) });
+    } catch {
+      setRenewOnStartState({ scheduled: false });
+    }
+  }
+
   function showRebuildModal(title, message) {
     els.rebuildModalTitle.textContent = title;
     els.rebuildModalMessage.textContent = message;
@@ -424,6 +449,37 @@ async function initViewerApp() {
   });
 
   els.detail.addEventListener("click", async (event) => {
+    const avatarButton = event.target.closest("[data-avatar-description]");
+    if (avatarButton) {
+      event.preventDefault();
+      const descriptionCard = avatarButton.closest("[data-avatar-description-card]");
+      const descriptionPanel = descriptionCard?.querySelector("[data-avatar-description-panel]");
+      if (!descriptionPanel) return;
+
+      const expanded = avatarButton.getAttribute("aria-expanded") === "true";
+      for (const button of els.detail.querySelectorAll("[data-avatar-description][aria-expanded='true']")) {
+        if (button === avatarButton) continue;
+        button.setAttribute("aria-expanded", "false");
+      }
+      for (const panel of els.detail.querySelectorAll("[data-avatar-description-panel]")) {
+        if (panel === descriptionPanel) continue;
+        panel.classList.add("hidden");
+        panel.textContent = "";
+      }
+
+      if (expanded) {
+        avatarButton.setAttribute("aria-expanded", "false");
+        descriptionPanel.classList.add("hidden");
+        descriptionPanel.textContent = "";
+        return;
+      }
+
+      avatarButton.setAttribute("aria-expanded", "true");
+      descriptionPanel.textContent = String(avatarButton.getAttribute("data-avatar-description") || "").trim();
+      descriptionPanel.classList.remove("hidden");
+      return;
+    }
+
     const searchButton = event.target.closest("[data-search-query]");
     if (!searchButton) return;
     const query = String(searchButton.getAttribute("data-search-query") || "").trim();
@@ -485,6 +541,39 @@ async function initViewerApp() {
     }
   });
 
+  els.renewOnStartToggle?.addEventListener("change", async () => {
+    const scheduled = Boolean(els.renewOnStartToggle.checked);
+    setRenewOnStartState({ isBusy: true, scheduled });
+    try {
+      const response = await fetch("/api/renew-on-start", {
+        method: scheduled ? "POST" : "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        const message = payload?.details
+          ? `${payload.error || "Failed to update renew-on-start"}: ${payload.details}`
+          : payload?.error || "Failed to update renew-on-start";
+        throw new Error(message);
+      }
+
+      setRenewOnStartState({ scheduled: Boolean(payload?.scheduled) });
+      showRebuildModal(
+        scheduled ? "Renew scheduled" : "Renew canceled",
+        scheduled
+          ? "The next app launch will delete the cached SQLite database and rebuild it from manifests and local files."
+          : "The next app launch will use the normal cached startup flow again.",
+      );
+    } catch (error) {
+      setRenewOnStartState({ scheduled: !scheduled });
+      showRebuildModal(
+        "Renew update failed",
+        error.message || "Could not update renew-on-start.",
+      );
+    } finally {
+      setRenewOnStartState({ isBusy: false });
+    }
+  });
+
   els.rebuildModalOk.addEventListener("click", () => {
     hideRebuildModal();
   });
@@ -505,6 +594,7 @@ async function initViewerApp() {
   updateDateResetButton();
   viewer.renderSourceNav();
   viewer.syncNavChips();
+  void loadRenewOnStartState();
   void refresh();
 }
 

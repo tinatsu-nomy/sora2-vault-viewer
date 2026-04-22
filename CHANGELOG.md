@@ -7,6 +7,8 @@
 - Changed startup to use the last completed SQLite cache immediately instead of always triggering an automatic full rescan
 - Kept `Rescan` as the explicit rebuild action and continued rebuilding the SQLite cache by deleting and rewriting all cached rows
 - Added a temporary startup notice that reminds users to click `Rescan` after updating files while the app was closed
+- Added `SORA_SQLITE_RENEW_ON_START=1` to delete the cached SQLite database at startup and force a clean rebuild
+- Added a one-shot `Renew next start` checkbox that schedules the next app launch to behave like `SORA_SQLITE_RENEW_ON_START=1`
 
 ## v0.2.5
 

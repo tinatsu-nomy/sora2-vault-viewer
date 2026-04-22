@@ -152,6 +152,8 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       viewCount: item.viewCount,
       posterUsername: item.posterUsername || null,
       profileUserId: item.profileUserId || null,
+      posterDisplayName: item.posterDisplayName || null,
+      posterDescription: item.posterDescription || null,
       cameoCount: Number(item.cameoCount || 0),
       cameoOwnerUsernames: item.cameoOwnerUsernames || [],
       cameoProfiles: item.cameoProfiles || [],
