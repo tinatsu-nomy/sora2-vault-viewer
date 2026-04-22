@@ -56,6 +56,7 @@ viewer.els = {
   rebuildButton: document.querySelector("#rebuildButton"),
   renewOnStartToggle: document.querySelector("#renewOnStartToggle"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
+  viewerVersion: document.querySelector("#viewerVersion"),
   topnav: document.querySelector(".topnav"),
   indexStatusBanner: document.querySelector("#indexStatusBanner"),
   clipboardStatus: document.querySelector("#clipboardStatus"),

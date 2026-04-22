@@ -47,6 +47,10 @@ function applyIndexPayload(payload) {
   };
   state.items = payload.items;
   state.stats = nextStats;
+  if (viewer.els?.viewerVersion) {
+    const appVersion = String(nextStats?.appVersion || nextStats?.paths?.appVersion || "").trim();
+    viewer.els.viewerVersion.textContent = appVersion ? `Version ${appVersion}` : "Version -";
+  }
   state.pagination = payload.pagination || {
     total: payload.items.length,
     limit: state.pagination.limit,

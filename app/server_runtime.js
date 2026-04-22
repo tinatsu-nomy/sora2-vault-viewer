@@ -23,6 +23,7 @@ const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
 const ROOT = process.env.SORA_VIEWER_ROOT
   ? path.resolve(process.env.SORA_VIEWER_ROOT)
   : path.resolve(__dirname, "..");
+const PACKAGE_JSON_PATH = path.join(ROOT, "package.json");
 const DATA_DIR = process.env.SORA_DATA_DIR
   ? path.resolve(process.env.SORA_DATA_DIR)
   : path.join(ROOT, "sora2_data");
@@ -38,6 +39,14 @@ const CONFIG_PATH = process.env.SORA_CONFIG_PATH
   ? path.resolve(process.env.SORA_CONFIG_PATH)
   : null;
 const AVATAR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".svg"];
+const APP_VERSION = (() => {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8"));
+    return parsed?.version ? String(parsed.version) : null;
+  } catch {
+    return null;
+  }
+})();
 
 function compactIndexForMemory(index) {
   return {
@@ -160,12 +169,13 @@ if (shouldRenewOnStart && ENABLE_SQLITE_CACHE) {
 }
 
 const serializers = createSerializers({
-  debugMode: DEBUG_MODE,
-  enableSqliteCache: ENABLE_SQLITE_CACHE,
-  runtimePaths: {
-    dataDir: DATA_DIR,
-    appDataDir: APP_DATA_DIR,
-    dbPath: DB_PATH,
+    debugMode: DEBUG_MODE,
+    enableSqliteCache: ENABLE_SQLITE_CACHE,
+    runtimePaths: {
+      appVersion: APP_VERSION,
+      dataDir: DATA_DIR,
+      appDataDir: APP_DATA_DIR,
+      dbPath: DB_PATH,
     txtCachePath: TXT_CACHE_PATH,
     configPath: CONFIG_PATH,
     publicDir: PUBLIC_DIR,

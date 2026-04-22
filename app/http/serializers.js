@@ -86,6 +86,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
     const manifests = stats.manifests || [];
     const manifestPreview = manifests.slice(0, MAX_MANIFEST_PREVIEW);
     return {
+      appVersion: runtimePaths.appVersion || null,
       totalItems: stats.totalItems,
       manifestItems: stats.manifestItems,
       localOnlyItems: stats.localOnlyItems,
@@ -112,6 +113,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
         configured: enableSqliteCache,
       },
       paths: {
+        appVersion: runtimePaths.appVersion || null,
         dataDir: runtimePaths.dataDir || null,
         appDataDir: runtimePaths.appDataDir || null,
         configPath: runtimePaths.configPath || null,

@@ -6,7 +6,7 @@
     <title>Sora2 Vault Viewer</title>
     <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128.png" />
     <link rel="apple-touch-icon" href="/favicon-128.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260422a" />
+    <link rel="stylesheet" href="/styles.css?v=20260423b" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to Main Content</a>
@@ -21,7 +21,58 @@
           <p class="subtle">Browse local videos with the important context visible first and the raw metadata one step deeper</p>
         </div>
         <div class="topbar-side">
-          <p class="eyebrow topbar-label">Sources</p>
+          <div class="topbar-side-head">
+            <p class="eyebrow topbar-label">Sources</p>
+            <details class="topbar-utility-menu">
+              <summary class="topbar-utility-summary" aria-label="Open utility menu">
+                <span class="topbar-utility-icon" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+                <span class="topbar-utility-text">Menu</span>
+              </summary>
+              <div class="topbar-utility-panel" aria-label="viewer utilities">
+                <section class="topbar-utility-section">
+                  <div class="toolbar-utility-group" aria-label="clipboard helpers">
+                    <div class="toolbar-utility-meta">
+                      <strong>Clipboard</strong>
+                      <span>Copy usernames from the current filtered result set.</span>
+                    </div>
+                    <label class="field compact toolbar-copy-order">
+                      <span>Poster order</span>
+                      <select id="copyPostersSort" name="copyPostersSort" autocomplete="off" title="Choose the sort order for copied poster usernames">
+                        <option value="name-asc" selected>Name A→Z</option>
+                        <option value="name-desc">Name Z→A</option>
+                        <option value="likes-desc">Most likes</option>
+                        <option value="likes-asc">Fewest likes</option>
+                        <option value="recent-post-desc">Recently posted</option>
+                        <option value="recent-post-asc">Oldest post first</option>
+                        <option value="posts-desc">Most posts</option>
+                        <option value="posts-asc">Fewest posts</option>
+                      </select>
+                    </label>
+                    <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
+                  </div>
+                </section>
+
+                <section class="topbar-utility-section">
+                  <div class="toolbar-utility-group" aria-label="startup options">
+                    <div class="toolbar-utility-meta">
+                      <strong>Startup</strong>
+                      <span>Control one-shot maintenance actions for the next app launch.</span>
+                    </div>
+                    <label class="toggle">
+                      <input id="renewOnStartToggle" name="renewOnStartToggle" type="checkbox" />
+                      <span>Renew next start</span>
+                    </label>
+                  </div>
+                </section>
+
+                <div id="viewerVersion" class="topbar-utility-version subtle">Version -</div>
+              </div>
+            </details>
+          </div>
           <nav class="topnav" aria-label="source filters"></nav>
         </div>
       </header>
@@ -65,44 +116,6 @@
             <span>Show cameo</span>
           </label>
         </div>
-
-        <details class="toolbar-utility-row">
-          <summary>Clipboard</summary>
-          <div class="toolbar-utility-group" aria-label="clipboard helpers">
-            <div class="toolbar-utility-meta">
-              <strong>Clipboard</strong>
-              <span>Copy usernames from the current filtered result set.</span>
-            </div>
-            <label class="field compact toolbar-copy-order">
-              <span>Poster order</span>
-              <select id="copyPostersSort" name="copyPostersSort" autocomplete="off" title="Choose the sort order for copied poster usernames">
-                <option value="name-asc" selected>Name A→Z</option>
-                <option value="name-desc">Name Z→A</option>
-                <option value="likes-desc">Most likes</option>
-                <option value="likes-asc">Fewest likes</option>
-                <option value="recent-post-desc">Recently posted</option>
-                <option value="recent-post-asc">Oldest post first</option>
-                <option value="posts-desc">Most posts</option>
-                <option value="posts-asc">Fewest posts</option>
-              </select>
-            </label>
-            <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
-          </div>
-        </details>
-
-        <details class="toolbar-utility-row">
-          <summary>Options</summary>
-          <div class="toolbar-utility-group" aria-label="startup options">
-            <div class="toolbar-utility-meta">
-              <strong>Startup</strong>
-              <span>Control one-shot maintenance actions for the next app launch.</span>
-            </div>
-            <label class="toggle">
-              <input id="renewOnStartToggle" name="renewOnStartToggle" type="checkbox" />
-              <span>Renew next start</span>
-            </label>
-          </div>
-        </details>
 
         <details class="filter-drawer">
           <summary>Advanced filters and sorting</summary>
@@ -202,9 +215,9 @@
       </div>
     </div>
 
-    <script src="/state.js?v=20260416c" defer></script>
+    <script src="/state.js?v=20260423b" defer></script>
     <script src="/render.js?v=20260422a" defer></script>
-    <script src="/api.js?v=20260416c" defer></script>
+    <script src="/api.js?v=20260423b" defer></script>
     <script src="/app.js?v=20260422a" defer></script>
   </body>
 </html>
