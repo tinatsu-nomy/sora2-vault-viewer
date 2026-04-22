@@ -1,6 +1,7 @@
+sora*/
 node_modules/
 dist-electron/
-Sora2 Vault Viewer*-portable.exe
+*.exe
 
 # Local data and generated cache
 sora2_data/
