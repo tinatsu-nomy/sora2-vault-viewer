@@ -43,6 +43,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     database.exec(`
       CREATE TABLE IF NOT EXISTS items (
         id TEXT PRIMARY KEY,
+        sort_id_core TEXT,
         source TEXT,
         source_memberships_json TEXT NOT NULL,
         kind TEXT,
@@ -172,13 +173,13 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
 
       const insert = database.prepare(`
         INSERT OR REPLACE INTO items (
-          id, source, source_memberships_json, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
+          id, sort_id_core, source, source_memberships_json, kind, date, date_sort_ms, prompt, gen_id, generation_id, task_id, post_id,
           poster_username, cameo_count, owner_usernames_json, cameo_owner_usernames_json,
           duration, duration_sort, ratio, width, height, like_count, view_count,
           is_liked, has_local_media, has_local_text, thumb_url, preview_url, download_url,
           local_media_path, local_txt_path, search_text, detail_json
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?,
@@ -201,6 +202,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         const { searchText, dateSortMs, ...detailItem } = item;
         insert.run(
           item.id,
+          item.sortIdCore || "",
           item.source,
           JSON.stringify(item.sourceMemberships || [item.source].filter(Boolean)),
           item.kind,
@@ -382,6 +384,34 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     return database.prepare(sql).all(...values);
   }
 
+  function queryItemIdentifiers({ joins, whereClause, values, orderBy, field }) {
+    const database = getDb();
+    if (!database) return null;
+
+    const column = (() => {
+      switch (field) {
+        case "postId":
+          return "items.post_id";
+        case "taskId":
+          return "items.task_id";
+        case "genId":
+        default:
+          return "items.gen_id";
+      }
+    })();
+
+    const fromClause = `FROM items ${joins.join(" ")}`;
+    const sql = `
+      SELECT ${column} AS identifier
+      ${fromClause}
+      ${whereClause}
+      ${whereClause ? "AND" : "WHERE"} COALESCE(${column}, '') <> ''
+      ${orderBy}
+    `;
+
+    return database.prepare(sql).all(...values).map((row) => String(row.identifier || "").trim()).filter(Boolean);
+  }
+
   function getItemDetail(id) {
     const database = getDb();
     if (!database) return null;
@@ -410,6 +440,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     persistIndex,
     loadIndexMeta,
     queryItems,
+    queryItemIdentifiers,
     queryPosterUsernames,
     getItemDetail,
     getLocalFile,

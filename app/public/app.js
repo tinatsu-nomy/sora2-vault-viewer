@@ -72,6 +72,8 @@ async function initViewerApp() {
     state.filters.dateFrom = els.dateFrom.value;
     state.filters.dateTo = els.dateTo.value;
     state.filters.localOnly = els.localOnly.checked;
+    state.filters.remoteOnly = els.remoteOnly.checked;
+    state.filters.manifestGapOnly = els.manifestGapOnly.checked;
     state.filters.withText = els.withText.checked;
     state.filters.withMedia = els.withMedia.checked;
     state.filters.showCameo = els.showCameo.checked;
@@ -286,6 +288,24 @@ async function initViewerApp() {
       .join("\n");
   }
 
+  async function identifierListText(field) {
+    const queryString = viewer.buildQueryString();
+    const params = new URLSearchParams(queryString);
+    params.set("field", field);
+    const response = await fetch(`/api/identifiers?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      const message = payload?.details
+        ? `${payload.error || "Failed to load identifiers"}: ${payload.details}`
+        : payload?.error || "Failed to load identifiers";
+      throw new Error(message);
+    }
+    return (payload?.items || [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+
   async function handleSourceMenuCopy(button, kind) {
     const defaultLabel = button.dataset.defaultLabel || button.textContent || "Copy";
     button.dataset.defaultLabel = defaultLabel;
@@ -331,6 +351,26 @@ async function initViewerApp() {
     }, 1200);
   }
 
+  async function handleIdentifierCopy(button, field, label) {
+    const defaultLabel = button.dataset.defaultLabel || button.textContent || `Copy ${label}`;
+    button.dataset.defaultLabel = defaultLabel;
+    button.disabled = true;
+    try {
+      const text = await identifierListText(field);
+      await copyTextToClipboard(text);
+      button.textContent = "Copied";
+      announceClipboardStatus(`Copied ${label} values to the clipboard.`);
+    } catch (error) {
+      button.textContent = "Failed";
+      announceClipboardStatus(`Could not copy ${label} values. Try again or check clipboard permissions.`);
+    }
+
+    window.setTimeout(() => {
+      button.textContent = defaultLabel;
+      button.disabled = false;
+    }, 1200);
+  }
+
   Object.assign(viewer, {
     applyCharGroupFilter,
     applySourceGroupToggle,
@@ -354,6 +394,15 @@ async function initViewerApp() {
 
   els.copyPostersButton.addEventListener("click", () => {
     void handlePosterCopy(els.copyPostersButton);
+  });
+  els.copyPostIdsButton?.addEventListener("click", () => {
+    void handleIdentifierCopy(els.copyPostIdsButton, "postId", "post_id");
+  });
+  els.copyGenIdsButton?.addEventListener("click", () => {
+    void handleIdentifierCopy(els.copyGenIdsButton, "genId", "gen_id");
+  });
+  els.copyTaskIdsButton?.addEventListener("click", () => {
+    void handleIdentifierCopy(els.copyTaskIdsButton, "taskId", "task_id");
   });
 
   els.query.addEventListener("input", () => {
@@ -493,8 +542,13 @@ async function initViewerApp() {
     els.query.select();
   });
 
-  for (const checkbox of [els.localOnly, els.withText, els.withMedia]) {
+  for (const checkbox of [els.localOnly, els.remoteOnly, els.manifestGapOnly, els.withText, els.withMedia]) {
     checkbox.addEventListener("change", async () => {
+      if (checkbox === els.localOnly && els.localOnly.checked) {
+        els.remoteOnly.checked = false;
+      } else if (checkbox === els.remoteOnly && els.remoteOnly.checked) {
+        els.localOnly.checked = false;
+      }
       resetPagination();
       viewer.clearDataCaches();
       await refresh();
@@ -515,6 +569,12 @@ async function initViewerApp() {
       title: "Rescanning library…",
       message: "Rebuilding the SQLite cache from manifests and local files.",
     });
+    void viewer.pollBuildProgress({
+      title: "Rescanning library…",
+      message: "Rebuilding the SQLite cache from manifests and local files.",
+      showModalIfBuilding: true,
+      onlyWhenNoCachedIndex: false,
+    });
     try {
       const response = await fetch("/api/rebuild", { method: "POST" });
       const payload = await response.json();
@@ -534,6 +594,7 @@ async function initViewerApp() {
       viewer.hidePageLoadingModal();
       showRebuildModal("Rescan failed", error.message || "Manifest and local file scanning failed.");
     } finally {
+      viewer.clearBuildProgressPoll();
       viewer.hidePageLoadingModal();
       if (els.rebuildButton.disabled) {
         setRebuildState(false, "");
@@ -595,7 +656,20 @@ async function initViewerApp() {
   viewer.renderSourceNav();
   viewer.syncNavChips();
   void loadRenewOnStartState();
-  void refresh();
+  void (async () => {
+    void viewer.pollBuildProgress({
+      title: "Building library…",
+      message: "Scanning manifests and local files for the first load.",
+      showModalIfBuilding: true,
+      onlyWhenNoCachedIndex: true,
+    });
+    try {
+      await refresh();
+    } finally {
+      viewer.clearBuildProgressPoll();
+      viewer.hidePageLoadingModal();
+    }
+  })();
 }
 
 void initViewerApp().catch((error) => {

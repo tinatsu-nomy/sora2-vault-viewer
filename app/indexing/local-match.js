@@ -163,7 +163,7 @@ function sourceMatchesEntry(entry, localRecord) {
 }
 
 function scoreLocalMatch(entry, localRecord) {
-  if (!entry || !sourceMatchesEntry(entry, localRecord)) return -1;
+  if (!entry) return -1;
 
   const entryLookupValues = new Set(
     [
@@ -181,6 +181,13 @@ function scoreLocalMatch(entry, localRecord) {
   const exactIds = [localRecord.generationId, localRecord.postId, localRecord.taskId]
     .filter(Boolean)
     .map((value) => slugForText(value));
+
+  const hasStrongExactId = [localRecord.generationId, localRecord.postId]
+    .filter(Boolean)
+    .map((value) => slugForText(value))
+    .some((value) => entryLookupValues.has(value));
+
+  if (!sourceMatchesEntry(entry, localRecord) && !hasStrongExactId) return -1;
 
   for (const value of exactIds) {
     if (!entryLookupValues.has(value)) return -1;
@@ -243,12 +250,22 @@ function applyCustomSourceAliases(entries, sourceDirs) {
   }
 }
 
-async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null } = {}) {
+async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null, onProgress = null } = {}) {
   const unmatchedLocals = new Map();
+  const sourceEntries = Object.entries(sourceDirs);
 
-  for (const [source, dirPath] of Object.entries(sourceDirs)) {
+  for (const [sourceIndex, [source, dirPath]] of sourceEntries.entries()) {
     const grouped = new Map();
     const filePaths = await walkFiles(dirPath);
+
+    onProgress?.({
+      phase: "local-files",
+      message: `Matching local files for ${source}...`,
+      detail: `${filePaths.length} discovered files`,
+      current: sourceIndex + 1,
+      total: sourceEntries.length,
+      unit: "source",
+    });
 
     for (const filePath of filePaths) {
       const stem = basenameWithoutExt(filePath);
@@ -260,6 +277,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
       group.source = source;
     }
 
+    let processedGroups = 0;
     for (const group of grouped.values()) {
       const localRecord = group.txtPath
         ? await parseTxtRecord(group.txtPath, source, txtRecordCache)
@@ -281,6 +299,18 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
             idTokens: extractIdTokens(group.mediaPath),
             filePath: group.mediaPath,
           };
+
+      processedGroups += 1;
+      if (processedGroups === 1 || processedGroups === grouped.size || processedGroups % 100 === 0) {
+        onProgress?.({
+          phase: "local-files",
+          message: `Matching local files for ${source}...`,
+          detail: `${processedGroups} of ${grouped.size} file groups`,
+          current: sourceIndex + 1,
+          total: sourceEntries.length,
+          unit: "source",
+        });
+      }
 
       const candidateIds = new Set();
       const tokensToMatch = [

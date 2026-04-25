@@ -8,6 +8,42 @@ function createListingService({
   serializeListItem,
   serializeListRow,
 }) {
+  function idCorePresenceOrder(columnName = "items.sort_id_core") {
+    return `CASE WHEN COALESCE(${columnName}, '') = '' THEN 1 ELSE 0 END`;
+  }
+
+  function listingOrderBy(sort, activeSourceOrder) {
+    switch (sort) {
+      case "idcore-asc":
+        return `ORDER BY ${idCorePresenceOrder()} ASC, COALESCE(items.sort_id_core, '') ASC, items.id ASC`;
+      case "idcore-desc":
+        return `ORDER BY ${idCorePresenceOrder()} ASC, COALESCE(items.sort_id_core, '') DESC, items.id DESC`;
+      case "date-asc":
+        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+      case "views-desc":
+        return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
+      case "views-asc":
+        return "ORDER BY COALESCE(items.view_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+      case "likes-desc":
+        return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
+      case "likes-asc":
+        return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+      case "prompt-asc":
+        return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE ASC, items.id ASC";
+      case "prompt-desc":
+        return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE DESC, items.id DESC";
+      case "duration-asc":
+        return "ORDER BY COALESCE(items.duration_sort, 0) ASC, items.id ASC";
+      case "duration-desc":
+        return "ORDER BY COALESCE(items.duration_sort, 0) DESC, items.id DESC";
+      case "source-asc":
+        return sourceOrderByClause(activeSourceOrder);
+      case "date-desc":
+      default:
+        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
+    }
+  }
+
   function compareSourceMembershipKeys(left, right, activeSourceOrder) {
     const leftIndex = activeSourceOrder.indexOf(left);
     const rightIndex = activeSourceOrder.indexOf(right);
@@ -117,6 +153,8 @@ function createListingService({
     }
 
     if (params.localOnly) where.push("(items.has_local_media = 1 OR items.has_local_text = 1)");
+    if (params.remoteOnly) where.push("(items.kind = 'manifest' AND items.has_local_media = 0 AND items.has_local_text = 0)");
+    if (params.manifestGapOnly) where.push("items.kind = 'local-only'");
     if (params.withText) where.push("items.has_local_text = 1");
     if (params.withMedia) where.push("items.has_local_media = 1");
     if (params.dateFrom != null) {
@@ -144,11 +182,66 @@ function createListingService({
       filtered = filtered.filter((item) => itemSourceMemberships(item).includes(params.source));
     }
     if (params.localOnly) filtered = filtered.filter((item) => item.hasLocalMedia || item.hasLocalText);
+    if (params.remoteOnly) filtered = filtered.filter((item) => item.kind === "manifest" && !item.hasLocalMedia && !item.hasLocalText);
+    if (params.manifestGapOnly) filtered = filtered.filter((item) => item.kind === "local-only");
     if (params.withText) filtered = filtered.filter((item) => item.hasLocalText);
     if (params.withMedia) filtered = filtered.filter((item) => item.hasLocalMedia);
     if (params.dateFrom != null) filtered = filtered.filter((item) => item.dateSortMs != null && item.dateSortMs >= params.dateFrom);
     if (params.dateTo != null) filtered = filtered.filter((item) => item.dateSortMs != null && item.dateSortMs <= params.dateTo);
     return filtered;
+  }
+
+  function sortItems(items, params, activeSourceOrder) {
+    const sorted = [...items];
+    sorted.sort((left, right) => {
+      const leftPrompt = left.prompt || "";
+      const rightPrompt = right.prompt || "";
+      const leftViews = Number(left.viewCount || 0);
+      const rightViews = Number(right.viewCount || 0);
+      const leftLikes = Number(left.likeCount || 0);
+      const rightLikes = Number(right.likeCount || 0);
+      const leftIdCore = String(left.sortIdCore || "");
+      const rightIdCore = String(right.sortIdCore || "");
+      const leftMissingIdCore = leftIdCore ? 0 : 1;
+      const rightMissingIdCore = rightIdCore ? 0 : 1;
+      switch (params.sort) {
+        case "idcore-asc":
+          return leftMissingIdCore - rightMissingIdCore
+            || leftIdCore.localeCompare(rightIdCore)
+            || left.id.localeCompare(right.id);
+        case "idcore-desc":
+          return leftMissingIdCore - rightMissingIdCore
+            || rightIdCore.localeCompare(leftIdCore)
+            || right.id.localeCompare(left.id);
+        case "date-asc":
+          return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+        case "views-desc":
+          return rightViews - leftViews || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
+        case "views-asc":
+          return leftViews - rightViews || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+        case "likes-desc":
+          return rightLikes - leftLikes || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
+        case "likes-asc":
+          return leftLikes - rightLikes || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+        case "prompt-asc":
+          return leftPrompt.localeCompare(rightPrompt, "ja");
+        case "prompt-desc":
+          return rightPrompt.localeCompare(leftPrompt, "ja");
+        case "duration-asc":
+          return Number(left.duration || 0) - Number(right.duration || 0);
+        case "duration-desc":
+          return Number(right.duration || 0) - Number(left.duration || 0);
+        case "source-asc": {
+          const sourceIndex = compareSourceMembershipKeys(left.source, right.source, activeSourceOrder);
+          if (sourceIndex !== 0) return sourceIndex;
+          return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+        }
+        case "date-desc":
+        default:
+          return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
+      }
+    });
+    return sorted;
   }
 
   function sortPosterRows(rows, sort) {
@@ -206,33 +299,7 @@ function createListingService({
 
     const { joins, where, values } = queryParts;
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const orderBy = (() => {
-      switch (params.sort) {
-        case "date-asc":
-          return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
-        case "views-desc":
-          return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
-        case "views-asc":
-          return "ORDER BY COALESCE(items.view_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
-        case "likes-desc":
-          return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
-        case "likes-asc":
-          return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
-        case "prompt-asc":
-          return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE ASC, items.id ASC";
-        case "prompt-desc":
-          return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE DESC, items.id DESC";
-        case "duration-asc":
-          return "ORDER BY COALESCE(items.duration_sort, 0) ASC, items.id ASC";
-        case "duration-desc":
-          return "ORDER BY COALESCE(items.duration_sort, 0) DESC, items.id DESC";
-        case "source-asc":
-          return sourceOrderByClause(activeSourceOrder);
-        case "date-desc":
-        default:
-          return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
-      }
-    })();
+    const orderBy = listingOrderBy(params.sort, activeSourceOrder);
 
     const queryResult = store.queryItems({
       joins,
@@ -258,45 +325,8 @@ function createListingService({
     const dbListing = listItemsFromDb(params, activeSourceOrder);
     if (dbListing) return dbListing;
 
-    let filtered = filteredItems(index, params);
-
-    const sorted = [...filtered];
-    sorted.sort((left, right) => {
-      const leftPrompt = left.prompt || "";
-      const rightPrompt = right.prompt || "";
-      const leftViews = Number(left.viewCount || 0);
-      const rightViews = Number(right.viewCount || 0);
-      const leftLikes = Number(left.likeCount || 0);
-      const rightLikes = Number(right.likeCount || 0);
-      switch (params.sort) {
-        case "date-asc":
-          return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
-        case "views-desc":
-          return rightViews - leftViews || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
-        case "views-asc":
-          return leftViews - rightViews || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
-        case "likes-desc":
-          return rightLikes - leftLikes || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
-        case "likes-asc":
-          return leftLikes - rightLikes || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
-        case "prompt-asc":
-          return leftPrompt.localeCompare(rightPrompt, "ja");
-        case "prompt-desc":
-          return rightPrompt.localeCompare(leftPrompt, "ja");
-        case "duration-asc":
-          return Number(left.duration || 0) - Number(right.duration || 0);
-        case "duration-desc":
-          return Number(right.duration || 0) - Number(left.duration || 0);
-        case "source-asc": {
-          const sourceIndex = compareSourceMembershipKeys(left.source, right.source, activeSourceOrder);
-          if (sourceIndex !== 0) return sourceIndex;
-          return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
-        }
-        case "date-desc":
-        default:
-          return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
-      }
-    });
+    const filtered = filteredItems(index, params);
+    const sorted = sortItems(filtered, params, activeSourceOrder);
 
     const total = sorted.length;
     const safeOffset = total === 0 ? 0 : Math.min(params.offset, Math.floor((total - 1) / params.limit) * params.limit);
@@ -381,6 +411,52 @@ function createListingService({
       .map((row) => row.posterUsername);
   }
 
+  function identifierValueForItem(item, field) {
+    switch (field) {
+      case "postId":
+        return String(item?.postId || "").trim();
+      case "taskId":
+        return String(item?.taskId || "").trim();
+      case "genId":
+      default:
+        return String(item?.genId || item?.generationId || "").trim();
+    }
+  }
+
+  function dedupeIdentifierValues(values) {
+    const seen = new Set();
+    const deduped = [];
+    for (const value of values) {
+      const normalized = String(value || "").trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      deduped.push(normalized);
+    }
+    return deduped;
+  }
+
+  function listIdentifiers(index, url, field) {
+    const params = parseListParams(url);
+    const activeSourceOrder = Array.isArray(index?.stats?.sourceOrder) && index.stats.sourceOrder.length
+      ? index.stats.sourceOrder
+      : sourceOrder;
+    const queryParts = buildListingQueryParts(params);
+    if (queryParts.isEmpty) return [];
+
+    const dbValues = store.queryItemIdentifiers({
+      joins: queryParts.joins,
+      whereClause: queryParts.where.length ? `WHERE ${queryParts.where.join(" AND ")}` : "",
+      values: queryParts.values,
+      orderBy: listingOrderBy(params.sort, activeSourceOrder),
+      field,
+    });
+    if (dbValues) return dedupeIdentifierValues(dbValues);
+
+    const filtered = filteredItems(index, params);
+    const sorted = sortItems(filtered, params, activeSourceOrder);
+    return dedupeIdentifierValues(sorted.map((item) => identifierValueForItem(item, field)));
+  }
+
   function itemDetails(index, itemId) {
     const dbItem = store.getItemDetail(itemId);
     if (dbItem) return dbItem;
@@ -400,6 +476,7 @@ function createListingService({
 
   return {
     itemDetails,
+    listIdentifiers,
     listItems,
     listPosterUsernames,
     localFileForRequest,

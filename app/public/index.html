@@ -6,7 +6,7 @@
     <title>Sora2 Vault Viewer</title>
     <link rel="icon" type="image/png" sizes="128x128" href="/favicon-128.png" />
     <link rel="apple-touch-icon" href="/favicon-128.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260423b" />
+    <link rel="stylesheet" href="/styles.css?v=20260425b" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to Main Content</a>
@@ -37,7 +37,7 @@
                   <div class="toolbar-utility-group" aria-label="clipboard helpers">
                     <div class="toolbar-utility-meta">
                       <strong>Clipboard</strong>
-                      <span>Copy usernames from the current filtered result set.</span>
+                      <span>Copy usernames and IDs from the current filtered result set.</span>
                     </div>
                     <label class="field compact toolbar-copy-order">
                       <span>Poster order</span>
@@ -53,6 +53,11 @@
                       </select>
                     </label>
                     <button id="copyPostersButton" type="button" class="secondary" title="Copy poster usernames from the current filters">Copy posters</button>
+                    <div class="toolbar-copy-identifiers" aria-label="copy identifiers">
+                      <button id="copyPostIdsButton" type="button" class="secondary" title="Copy post_id values from the current filters">Copy post_id</button>
+                      <button id="copyGenIdsButton" type="button" class="secondary" title="Copy gen_id values from the current filters">Copy gen_id</button>
+                      <button id="copyTaskIdsButton" type="button" class="secondary" title="Copy task_id values from the current filters">Copy task_id</button>
+                    </div>
                   </div>
                 </section>
 
@@ -98,7 +103,17 @@
         <div class="toolbar-toggle-row" aria-label="quick filters">
           <label class="toggle">
             <input id="localOnly" name="localOnly" type="checkbox" checked />
-            <span>Local only</span>
+            <span>Local files</span>
+          </label>
+
+          <label class="toggle">
+            <input id="remoteOnly" name="remoteOnly" type="checkbox" />
+            <span>Remote files</span>
+          </label>
+
+          <label class="toggle">
+            <input id="manifestGapOnly" name="manifestGapOnly" type="checkbox" />
+            <span>No manifest</span>
           </label>
 
           <label class="toggle">
@@ -129,6 +144,8 @@
                 <option value="views-asc">Fewest views</option>
                 <option value="likes-desc">Most likes</option>
                 <option value="likes-asc">Fewest likes</option>
+                <option value="idcore-desc">ID core Z→A</option>
+                <option value="idcore-asc">ID core A→Z</option>
                 <option value="prompt-asc">Prompt A→Z</option>
                 <option value="prompt-desc">Prompt Z→A</option>
                 <option value="duration-desc">Longest first</option>
@@ -212,12 +229,13 @@
       <div class="modal-card loading-dialog" role="status" aria-live="polite" aria-atomic="true">
         <h3 id="pageLoadingTitle">Loading page...</h3>
         <p id="pageLoadingMessage" class="subtle">Preparing videos for this page.</p>
+        <p id="pageLoadingProgress" class="subtle"></p>
       </div>
     </div>
 
-    <script src="/state.js?v=20260423b" defer></script>
-    <script src="/render.js?v=20260422a" defer></script>
-    <script src="/api.js?v=20260423b" defer></script>
-    <script src="/app.js?v=20260422a" defer></script>
+    <script src="/state.js?v=20260425a" defer></script>
+    <script src="/render.js?v=20260424b" defer></script>
+    <script src="/api.js?v=20260425a" defer></script>
+    <script src="/app.js?v=20260425a" defer></script>
   </body>
 </html>

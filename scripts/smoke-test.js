@@ -657,6 +657,13 @@ async function run() {
     assert(indexPayload.stats.sourceOrder.includes("v2_cameo_drafts"), "Expected cameos draft sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_@sparklecat"), "Expected char sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_drafts_@sparklecat"), "Expected char draft sources to be included in source order");
+    const buildStatusPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/build-status`,
+      "Expected /api/build-status to return 200",
+    );
+    assert.equal(typeof buildStatusPayload.hasCachedIndex, "boolean", "Expected build status to report whether a cached index exists");
+    assert.equal(typeof buildStatusPayload.isBuilding, "boolean", "Expected build status to report active rebuild state");
+    assert.equal(typeof buildStatusPayload.progress, "object", "Expected build status to include a progress payload");
     const mainItem = indexPayload.items.find((item) => item.genId === "gen_smoke123");
     assert(mainItem, "Expected the primary fixture item to be present");
     assert.equal(mainItem.mediaUrl, "/media?id=gen_smoke123&kind=media");
@@ -750,11 +757,47 @@ async function run() {
     assert.equal(cameosDraftFilterPayload.items.length, 1, "Expected only the cameos draft local-only item to appear in cameos drafts filter");
     assert.equal(cameosDraftFilterPayload.items[0].genId, "gen_cameodraft111");
 
+    const manifestGapPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?manifestGapOnly=1`,
+      "Expected manifest-gap filter search to return 200",
+    );
+    assert.equal(manifestGapPayload.items.length, 4, "Expected only local-only fixture items to appear in the manifest-gap filter");
+    assert(manifestGapPayload.items.every((item) => item.kind === "local-only"), "Expected manifest-gap filter items to all be local-only");
+    assert(manifestGapPayload.items.every((item) => item.hasLocalMedia), "Expected manifest-gap fixture items to remain directly playable");
+
+    const remoteOnlyPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?remoteOnly=1`,
+      "Expected remote-only filter search to return 200",
+    );
+    assert.equal(remoteOnlyPayload.items.length, 4, "Expected only manifest entries without local files to appear in the remote-only filter");
+    assert(remoteOnlyPayload.items.every((item) => item.kind === "manifest"), "Expected remote-only items to stay on manifest-backed entries");
+    assert(remoteOnlyPayload.items.every((item) => !item.hasLocalMedia && !item.hasLocalText), "Expected remote-only items not to expose local media or text");
+
     const mergedFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=v2_profile,v2_liked`,
       "Expected merged source filter search to return 200",
     );
     assert.equal(mergedFilterPayload.items.filter((item) => item.genId === "gen_smoke123").length, 1, "Expected shared items to stay deduped across multiple selected filters");
+
+    const idCoreAscendingPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&sort=idcore-asc`,
+      "Expected ID core ascending sort to return 200",
+    );
+    assert.deepEqual(
+      idCoreAscendingPayload.items.slice(0, 3).map((item) => item.genId),
+      ["gen_other999", "gen_smoke123", "gen_user999"],
+      "Expected ID core ascending sort to use the shared core portion before placing ID-less items last",
+    );
+
+    const idCoreDescendingPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&sort=idcore-desc`,
+      "Expected ID core descending sort to return 200",
+    );
+    assert.deepEqual(
+      idCoreDescendingPayload.items.slice(0, 3).map((item) => item.genId),
+      ["gen_user999", "gen_smoke123", "gen_other999"],
+      "Expected ID core descending sort to reverse the shared core ordering while keeping ID-less items last",
+    );
 
     const recentPostersPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/posters?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&posterSort=recent-post-desc`,
@@ -796,6 +839,24 @@ async function run() {
       "Expected poster usernames to sort by total likes ascending",
     );
 
+    const copiedPostIdsPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/identifiers?query=${encodeURIComponent("Smoke test prompt")}&field=postId`,
+      "Expected post_id clipboard endpoint to return 200",
+    );
+    assert.deepEqual(copiedPostIdsPayload.items, [mainItem.postId], "Expected post_id clipboard endpoint to return the filtered manifest post ID");
+
+    const copiedGenIdsPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/identifiers?query=${encodeURIComponent("Smoke test prompt")}&field=genId`,
+      "Expected gen_id clipboard endpoint to return 200",
+    );
+    assert.deepEqual(copiedGenIdsPayload.items, [mainItem.genId], "Expected gen_id clipboard endpoint to return the filtered generation ID");
+
+    const copiedTaskIdsPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/identifiers?query=${encodeURIComponent("Smoke test prompt")}&field=taskId`,
+      "Expected task_id clipboard endpoint to return 200",
+    );
+    assert.deepEqual(copiedTaskIdsPayload.items, [mainItem.taskId], "Expected task_id clipboard endpoint to return the filtered task ID");
+
     const fallbackSearchPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("Fallback manifest")}`,
       "Expected fallback prompt search to return 200",
@@ -833,6 +894,15 @@ async function run() {
     );
     assert.equal(ambiguousDetailPayload.mediaUrl, null, "Expected the ambiguous task fixture not to inherit the local media URL");
 
+    const localOnlyItem = manifestGapPayload.items.find((item) => item.genId === "gen_char111");
+    assert(localOnlyItem, "Expected a local-only char fixture item to be available for detail testing");
+    const localOnlyDetailPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/item/${encodeURIComponent(localOnlyItem.id)}`,
+      "Expected local-only fixture detail to load",
+    );
+    assert.equal(localOnlyDetailPayload.kind, "local-only", "Expected local-only detail payload kind to be preserved");
+    assert.equal(localOnlyDetailPayload.mediaUrl, `/media?id=${encodeURIComponent(localOnlyItem.id)}&kind=media`, "Expected local-only fixture detail to expose its playable media URL");
+
     const mediaResponse = await request(`http://127.0.0.1:${PORT}${detailPayload.mediaUrl}`);
     assert.equal(mediaResponse.status, 200, "Expected /media to return 200");
 
@@ -844,6 +914,61 @@ async function run() {
       `http://127.0.0.1:${PORT}/avatar?id=${encodeURIComponent(mainItem.id)}&role=cameo&username=${encodeURIComponent("cameo.source.hero")}`,
     );
     assert.equal(cameoAvatarResponse.status, 200, "Expected /avatar to resolve cameo avatars from owner_<cameo username> fallback files");
+
+    const byIdManifestPath = path.join(DATA_DIR, MANIFEST_FILE_NAME);
+    const byIdManifest = JSON.parse(fs.readFileSync(byIdManifestPath, "utf8"));
+    byIdManifest.total += 1;
+    byIdManifest.items.push({
+      source: "v2_by_id",
+      genId: "s_byid0001-attachment-0",
+      taskId: "task_byid0001",
+      postId: "s_byid0001",
+      date: "2026-04-16",
+      prompt: "By-id manifest should attach local media",
+      _raw: {
+        profile: { username: "byid_user" },
+        post: {
+          id: "s_byid0001",
+          text: "By-id manifest should attach local media",
+          attachments: [{ generation_id: "s_byid0001-attachment-0" }],
+          cameo_profiles: [],
+        },
+      },
+    });
+    fs.writeFileSync(byIdManifestPath, JSON.stringify(byIdManifest, null, 2), "utf8");
+    fs.writeFileSync(
+      path.join(CHAR_DIR, "2026-04-16_s_byid0001-attachment-0.mp4"),
+      Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+    );
+    fs.writeFileSync(
+      path.join(CHAR_DIR, "2026-04-16_s_byid0001-attachment-0.txt"),
+      [
+        "Source: v2_char_@sparklecat",
+        "Generation ID: s_byid0001-attachment-0",
+        "Task ID: task_byid0001",
+        "Post ID: s_byid0001",
+        "Date: 2026-04-16",
+        "Duration: 5",
+        "Resolution: 720x1280",
+        "Aspect ratio: 9:16",
+        "Liked: no",
+        "Prompt",
+        "By-id manifest should attach local media",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const byIdRebuildResponse = await request(`http://127.0.0.1:${PORT}/api/rebuild`, { method: "POST" });
+    assert.equal(byIdRebuildResponse.status, 200, "Expected /api/rebuild to succeed for by-id attachment regression coverage");
+
+    const byIdPayload = await waitForCondition(async () => {
+      const payload = await fetchIndexPayload(PORT, `?query=${encodeURIComponent("By-id manifest should attach local media")}`);
+      return payload.items.length ? payload : null;
+    });
+    const byIdItem = byIdPayload.items.find((item) => item.genId === "s_byid0001-attachment-0");
+    assert(byIdItem, "Expected the by-id manifest fixture item to be present after rebuild");
+    assert.equal(byIdItem.hasLocalMedia, true, "Expected exact generation/post IDs to attach local media even when manifest source is v2_by_id");
+    assert.equal(byIdItem.kind, "manifest", "Expected the by-id fixture to stay attached to its manifest item instead of becoming local-only");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     try {

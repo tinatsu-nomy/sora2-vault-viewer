@@ -15,7 +15,7 @@ const fsp = fs.promises;
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "6";
+const SQLITE_SCHEMA_VERSION = "7";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
 const SQLITE_RENEW_ON_START = process.env.SORA_SQLITE_RENEW_ON_START === "1";
@@ -195,14 +195,31 @@ const listingService = createListingService({
 
 const indexState = createIndexState({
   initialIndex: shouldRenewOnStart ? null : store.loadIndexMeta(),
-  buildIndex: async () => {
+  buildIndex: async ({ reportProgress } = {}) => {
     const sourceDirs = await discoverSourceDirs(DATA_DIR);
+    reportProgress?.({
+      phase: "preparing",
+      message: "Preparing source directories...",
+      detail: `${Object.keys(sourceDirs).length} sources discovered`,
+      current: Object.keys(sourceDirs).length,
+      total: Object.keys(sourceDirs).length,
+      unit: "source",
+    });
     const builtIndex = await buildIndex({
       dataDir: DATA_DIR,
       sourceDirs,
       databaseStatus: store.getStatus(),
       txtCachePath: TXT_CACHE_PATH,
       sourceOrder: Object.keys(sourceDirs).sort(compareSourceKeys),
+      onProgress: reportProgress,
+    });
+    reportProgress?.({
+      phase: "persisting-sqlite",
+      message: "Writing the rebuilt SQLite cache...",
+      detail: DB_PATH,
+      current: builtIndex.items.length,
+      total: builtIndex.items.length,
+      unit: "item",
     });
     store.persistIndex(builtIndex);
     builtIndex.stats.database = store.getStatus();
@@ -228,6 +245,7 @@ function serializeIndexStatus(index) {
     : null;
 
   return {
+    buildProgress: indexState.getBuildProgress(),
     isRefreshing,
     isStale: isRefreshing,
     refreshError,
@@ -504,6 +522,17 @@ async function handleRequest(request, response) {
       });
     }
 
+    if (url.pathname === "/api/identifiers") {
+      const index = await getIndexForRead();
+      const field = String(url.searchParams.get("field") || "genId");
+      if (!["postId", "genId", "taskId"].includes(field)) {
+        return json(response, 400, { error: "Invalid identifier field" });
+      }
+      return json(response, 200, {
+        items: listingService.listIdentifiers(index, url, field),
+      });
+    }
+
     if (url.pathname === "/api/rebuild" && request.method === "POST") {
       try {
         const rebuiltIndex = await indexState.startBuild();
@@ -515,6 +544,17 @@ async function handleRequest(request, response) {
       } catch (error) {
         return json(response, 500, { error: "Failed to rebuild index", details: error.message });
       }
+    }
+
+    if (url.pathname === "/api/build-status" && request.method === "GET") {
+      const currentIndex = indexState.getCurrent();
+      return json(response, 200, {
+        builtAt: currentIndex?.builtAt || null,
+        hasCachedIndex: Boolean(currentIndex),
+        isBuilding: indexState.isBuilding(),
+        lastError: indexState.getLastError()?.message || null,
+        progress: indexState.getBuildProgress(),
+      });
     }
 
     if (url.pathname === "/api/renew-on-start" && request.method === "GET") {

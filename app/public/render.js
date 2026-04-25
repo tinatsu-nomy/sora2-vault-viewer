@@ -544,12 +544,15 @@ function renderIndexError(message) {
 function renderIndexStatus() {
   const banner = els.indexStatusBanner;
   if (!banner) return;
+  const progressText = viewer.formatBuildProgress
+    ? viewer.formatBuildProgress(state.buildProgress || state.indexStatus?.buildProgress)
+    : "";
 
   if (state.indexStatus?.isRefreshing) {
     banner.className = "index-status-banner";
     banner.innerHTML = `
       <strong class="index-status-title">Background Update Running</strong>
-      <span class="index-status-text">Showing the previous index until the latest scan finishes.</span>
+      <span class="index-status-text">Showing the previous index until the latest scan finishes.${progressText ? ` ${escapeHtml(progressText)}` : ""}</span>
     `;
     banner.classList.remove("hidden");
     return;

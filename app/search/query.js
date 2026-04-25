@@ -63,6 +63,8 @@ function parseListParams(url) {
     .map((item) => item.trim())
     .filter(Boolean) || [];
   const localOnly = url.searchParams.get("localOnly") === "1";
+  const remoteOnly = url.searchParams.get("remoteOnly") === "1";
+  const manifestGapOnly = url.searchParams.get("manifestGapOnly") === "1";
   const withText = url.searchParams.get("withText") === "1";
   const withMedia = url.searchParams.get("withMedia") === "1";
   const dateFrom = parseDateValue(url.searchParams.get("dateFrom"));
@@ -81,6 +83,8 @@ function parseListParams(url) {
     hasSourcesParam,
     sources,
     localOnly,
+    remoteOnly,
+    manifestGapOnly,
     withText,
     withMedia,
     dateFrom,

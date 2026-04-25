@@ -10,6 +10,8 @@ function pageQueryStringForOffset(offset) {
   if (state.filters.dateFrom) params.set("dateFrom", state.filters.dateFrom);
   if (state.filters.dateTo) params.set("dateTo", state.filters.dateTo);
   if (state.filters.localOnly) params.set("localOnly", "1");
+  if (state.filters.remoteOnly) params.set("remoteOnly", "1");
+  if (state.filters.manifestGapOnly) params.set("manifestGapOnly", "1");
   if (state.filters.withText) params.set("withText", "1");
   if (state.filters.withMedia) params.set("withMedia", "1");
   params.set("limit", String(state.pagination.limit));
@@ -25,6 +27,8 @@ function buildQueryString() {
   if (state.filters.dateFrom) params.set("dateFrom", state.filters.dateFrom);
   if (state.filters.dateTo) params.set("dateTo", state.filters.dateTo);
   if (state.filters.localOnly) params.set("localOnly", "1");
+  if (state.filters.remoteOnly) params.set("remoteOnly", "1");
+  if (state.filters.manifestGapOnly) params.set("manifestGapOnly", "1");
   if (state.filters.withText) params.set("withText", "1");
   if (state.filters.withMedia) params.set("withMedia", "1");
   params.set("limit", String(state.pagination.limit));
@@ -45,6 +49,7 @@ function applyIndexPayload(payload) {
     isStale: false,
     refreshError: null,
   };
+  state.buildProgress = state.indexStatus?.buildProgress || state.buildProgress;
   state.items = payload.items;
   state.stats = nextStats;
   if (viewer.els?.viewerVersion) {

@@ -9,6 +9,7 @@ const {
   parseJson,
   pickPrimarySource,
   slugForText,
+  sortableIdCoreForItem,
   sortableDuration,
 } = require("./indexing/common");
 const {
@@ -138,7 +139,14 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
   };
 }
 
-async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = null, sourceOrder = [] }) {
+async function buildIndex({
+  dataDir,
+  sourceDirs,
+  databaseStatus,
+  txtCachePath = null,
+  sourceOrder = [],
+  onProgress = null,
+}) {
   const entries = new Map();
   const lookupMap = new Map();
   const manifests = [];
@@ -147,8 +155,22 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
   const manifestDescriptors = [];
   const seenManifestKeys = new Map();
   const txtRecordCache = createTxtRecordCache(txtCachePath);
+  const reportProgress = (progress) => {
+    if (typeof onProgress === "function") onProgress(progress);
+  };
 
-  for (const manifestPath of manifestFiles) {
+  reportProgress({
+    phase: "manifest-descriptors",
+    message: manifestFiles.length
+      ? "Reading manifest headers..."
+      : "No manifest files found. Matching local files...",
+    detail: manifestFiles.length ? "" : "Falling back to local file indexing only.",
+    current: 0,
+    total: manifestFiles.length,
+    unit: "manifest",
+  });
+
+  for (const [manifestIndex, manifestPath] of manifestFiles.entries()) {
     try {
       const descriptor = await readManifestDescriptor(manifestPath);
       manifestDescriptors.push({
@@ -164,6 +186,15 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
         error: `${error.code || "JSON_ERROR"}: ${error.message}`,
       });
       continue;
+    } finally {
+      reportProgress({
+        phase: "manifest-descriptors",
+        message: "Reading manifest headers...",
+        detail: path.basename(manifestPath),
+        current: manifestIndex + 1,
+        total: manifestFiles.length,
+        unit: "manifest",
+      });
     }
   }
 
@@ -175,9 +206,34 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
     scanSources: descriptor.scanSources,
   })));
 
-  for (const descriptor of manifestDescriptors) {
+  reportProgress({
+    phase: "manifest-items",
+    message: manifestDescriptors.length
+      ? "Reading manifest items..."
+      : "No manifest items to read.",
+    detail: manifestDescriptors.length ? "" : "Proceeding to local file matching.",
+    current: 0,
+    total: manifestDescriptors.length,
+    unit: "manifest",
+  });
+
+  for (const [descriptorIndex, descriptor] of manifestDescriptors.entries()) {
     try {
+      const manifestTotal = Number.isFinite(descriptor.total) ? descriptor.total : null;
       await streamManifestItems(descriptor.file, async (item, itemIndex) => {
+        if (itemIndex === 0 || (itemIndex + 1) % 250 === 0) {
+          reportProgress({
+            phase: "manifest-items",
+            message: `Reading manifest ${descriptorIndex + 1} of ${manifestDescriptors.length}...`,
+            detail: manifestTotal != null
+              ? `${path.basename(descriptor.file)} (${itemIndex + 1}/${manifestTotal} items)`
+              : `${path.basename(descriptor.file)} (${itemIndex + 1} items)`,
+            current: descriptorIndex + 1,
+            total: manifestDescriptors.length,
+            unit: "manifest",
+          });
+        }
+
         const dedupeKey = manifestDedupeKeyFromItem(item);
         const entry = parseManifestItem(item, descriptor.file, descriptor.exportedAt, itemIndex);
         if (dedupeKey && seenManifestKeys.has(dedupeKey)) {
@@ -219,10 +275,40 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
         error: `${error.code || "JSON_ERROR"}: ${error.message}`,
       });
       continue;
+    } finally {
+      reportProgress({
+        phase: "manifest-items",
+        message: `Reading manifest ${descriptorIndex + 1} of ${manifestDescriptors.length}...`,
+        detail: path.basename(descriptor.file),
+        current: descriptorIndex + 1,
+        total: manifestDescriptors.length,
+        unit: "manifest",
+      });
     }
   }
 
-  await attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache });
+  reportProgress({
+    phase: "local-files",
+    message: "Matching local videos and text files...",
+    detail: "",
+    current: 0,
+    total: Object.keys(sourceDirs).length,
+    unit: "source",
+  });
+
+  await attachLocalFiles(entries, lookupMap, sourceDirs, {
+    txtRecordCache,
+    onProgress: reportProgress,
+  });
+
+  reportProgress({
+    phase: "finalizing",
+    message: "Saving text cache and preparing the final index...",
+    detail: "",
+    current: null,
+    total: null,
+    unit: null,
+  });
   await txtRecordCache.persist();
 
   const items = [...entries.values()];
@@ -257,6 +343,7 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
 
     entry.cameoCount = countUniqueCameoProfiles(entry);
     entry.dateSortMs = dateSortMs;
+    entry.sortIdCore = sortableIdCoreForItem(entry);
     entry.hasLocalMedia = Boolean(entry.local?.mediaPath);
     entry.hasLocalText = Boolean(entry.local?.txtPath);
     entry.searchText = searchText;
@@ -293,6 +380,15 @@ async function buildIndex({ dataDir, sourceDirs, databaseStatus, txtCachePath = 
     manifestErrors,
     database: { ...(databaseStatus || {}) },
   };
+
+  reportProgress({
+    phase: "finalizing",
+    message: "Final index snapshot ready.",
+    detail: `${items.length} items prepared`,
+    current: items.length,
+    total: items.length,
+    unit: "item",
+  });
 
   return {
     items,

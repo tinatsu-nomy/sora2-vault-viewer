@@ -8,6 +8,8 @@ viewer.DEFAULT_FILTERS = {
   dateFrom: "",
   dateTo: "",
   localOnly: true,
+  remoteOnly: false,
+  manifestGapOnly: false,
   withText: false,
   withMedia: false,
   showCameo: true,
@@ -27,6 +29,18 @@ viewer.state = {
   items: [],
   stats: null,
   builtAt: null,
+  buildProgress: {
+    active: false,
+    phase: "idle",
+    message: "",
+    detail: "",
+    current: null,
+    total: null,
+    unit: null,
+    startedAt: null,
+    updatedAt: null,
+    error: null,
+  },
   indexStatus: {
     isRefreshing: false,
     isStale: false,
@@ -47,12 +61,17 @@ viewer.els = {
   dateTo: document.querySelector("#dateTo"),
   resetDateButton: document.querySelector("#resetDateButton"),
   localOnly: document.querySelector("#localOnly"),
+  remoteOnly: document.querySelector("#remoteOnly"),
+  manifestGapOnly: document.querySelector("#manifestGapOnly"),
   withText: document.querySelector("#withText"),
   withMedia: document.querySelector("#withMedia"),
   showCameo: document.querySelector("#showCameo"),
   clearQueryButton: document.querySelector("#clearQueryButton"),
   copyPostersSort: document.querySelector("#copyPostersSort"),
   copyPostersButton: document.querySelector("#copyPostersButton"),
+  copyPostIdsButton: document.querySelector("#copyPostIdsButton"),
+  copyGenIdsButton: document.querySelector("#copyGenIdsButton"),
+  copyTaskIdsButton: document.querySelector("#copyTaskIdsButton"),
   rebuildButton: document.querySelector("#rebuildButton"),
   renewOnStartToggle: document.querySelector("#renewOnStartToggle"),
   rebuildStatus: document.querySelector("#rebuildStatus"),
@@ -67,6 +86,7 @@ viewer.els = {
   pageLoadingModal: document.querySelector("#pageLoadingModal"),
   pageLoadingTitle: document.querySelector("#pageLoadingTitle"),
   pageLoadingMessage: document.querySelector("#pageLoadingMessage"),
+  pageLoadingProgress: document.querySelector("#pageLoadingProgress"),
   gallerySection: document.querySelector(".gallery-section"),
   detailSection: document.querySelector(".detail-section"),
   list: document.querySelector("#list"),
@@ -85,6 +105,7 @@ viewer.detailCache = new Map();
 viewer.transcriptCache = new Map();
 viewer.pagePrefetchInFlight = new Map();
 viewer.refreshPollTimer = null;
+viewer.buildProgressPollTimer = null;
 viewer.startupRefreshNoticeTimer = null;
 viewer.startupRefreshNoticeVisible = false;
 viewer.startupRefreshNoticeShown = false;
@@ -92,6 +113,7 @@ viewer.MAX_PAGE_CACHE_ENTRIES = 18;
 viewer.MAX_DETAIL_CACHE_ENTRIES = 120;
 viewer.MIN_PAGE_BUTTON_LOADING_MS = 180;
 viewer.BACKGROUND_REFRESH_POLL_MS = 1200;
+viewer.BUILD_PROGRESS_POLL_MS = 500;
 viewer.STARTUP_REFRESH_NOTICE_MS = 12000;
 viewer.SOURCE_ORDER = [];
 viewer.VIEW_STATE_STORAGE_KEY = "sora-viewer:view-state:v1";
@@ -102,6 +124,8 @@ viewer.VIEW_STATE_QUERY_KEYS = [
   "dateFrom",
   "dateTo",
   "localOnly",
+  "remoteOnly",
+  "manifestGapOnly",
   "withText",
   "withMedia",
   "showCameo",
@@ -142,10 +166,16 @@ viewer.normalizeViewState = function normalizeViewState(raw = {}) {
     dateFrom: String(raw.dateFrom || ""),
     dateTo: String(raw.dateTo || ""),
     localOnly: Boolean(raw.localOnly ?? viewer.DEFAULT_FILTERS.localOnly),
+    remoteOnly: Boolean(raw.remoteOnly ?? viewer.DEFAULT_FILTERS.remoteOnly),
+    manifestGapOnly: Boolean(raw.manifestGapOnly ?? viewer.DEFAULT_FILTERS.manifestGapOnly),
     withText: Boolean(raw.withText ?? viewer.DEFAULT_FILTERS.withText),
     withMedia: Boolean(raw.withMedia ?? viewer.DEFAULT_FILTERS.withMedia),
     showCameo: Boolean(raw.showCameo ?? viewer.DEFAULT_FILTERS.showCameo),
   };
+
+  if (filters.localOnly && filters.remoteOnly) {
+    filters.remoteOnly = false;
+  }
 
   return {
     query: filters.query,
@@ -154,6 +184,8 @@ viewer.normalizeViewState = function normalizeViewState(raw = {}) {
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     localOnly: filters.localOnly,
+    remoteOnly: filters.remoteOnly,
+    manifestGapOnly: filters.manifestGapOnly,
     withText: filters.withText,
     withMedia: filters.withMedia,
     showCameo: filters.showCameo,
@@ -171,6 +203,8 @@ viewer.serializeViewState = function serializeViewState() {
     dateFrom: viewer.state.filters.dateFrom,
     dateTo: viewer.state.filters.dateTo,
     localOnly: viewer.state.filters.localOnly,
+    remoteOnly: viewer.state.filters.remoteOnly,
+    manifestGapOnly: viewer.state.filters.manifestGapOnly,
     withText: viewer.state.filters.withText,
     withMedia: viewer.state.filters.withMedia,
     showCameo: viewer.state.filters.showCameo,
@@ -195,6 +229,8 @@ viewer.readViewStateFromLocation = function readViewStateFromLocation() {
     dateFrom: params.get("dateFrom"),
     dateTo: params.get("dateTo"),
     localOnly: viewer.parseBooleanParam(params.get("localOnly"), viewer.DEFAULT_FILTERS.localOnly),
+    remoteOnly: viewer.parseBooleanParam(params.get("remoteOnly"), viewer.DEFAULT_FILTERS.remoteOnly),
+    manifestGapOnly: viewer.parseBooleanParam(params.get("manifestGapOnly"), viewer.DEFAULT_FILTERS.manifestGapOnly),
     withText: viewer.parseBooleanParam(params.get("withText"), viewer.DEFAULT_FILTERS.withText),
     withMedia: viewer.parseBooleanParam(params.get("withMedia"), viewer.DEFAULT_FILTERS.withMedia),
     showCameo: viewer.parseBooleanParam(params.get("showCameo"), viewer.DEFAULT_FILTERS.showCameo),
@@ -226,6 +262,8 @@ viewer.applyViewState = function applyViewState(nextState = {}) {
   viewer.state.filters.dateFrom = normalized.dateFrom;
   viewer.state.filters.dateTo = normalized.dateTo;
   viewer.state.filters.localOnly = normalized.localOnly;
+  viewer.state.filters.remoteOnly = normalized.remoteOnly;
+  viewer.state.filters.manifestGapOnly = normalized.manifestGapOnly;
   viewer.state.filters.withText = normalized.withText;
   viewer.state.filters.withMedia = normalized.withMedia;
   viewer.state.filters.showCameo = normalized.showCameo;
@@ -264,6 +302,8 @@ viewer.syncFormFromState = function syncFormFromState() {
   els.dateFrom.value = state.filters.dateFrom;
   els.dateTo.value = state.filters.dateTo;
   els.localOnly.checked = state.filters.localOnly;
+  els.remoteOnly.checked = state.filters.remoteOnly;
+  els.manifestGapOnly.checked = state.filters.manifestGapOnly;
   els.withText.checked = state.filters.withText;
   els.withMedia.checked = state.filters.withMedia;
   els.showCameo.checked = state.filters.showCameo;
@@ -299,6 +339,8 @@ viewer.persistViewState = function persistViewState() {
   if (snapshot.dateFrom) params.set("dateFrom", snapshot.dateFrom);
   if (snapshot.dateTo) params.set("dateTo", snapshot.dateTo);
   if (snapshot.localOnly !== viewer.DEFAULT_FILTERS.localOnly) params.set("localOnly", snapshot.localOnly ? "1" : "0");
+  if (snapshot.remoteOnly !== viewer.DEFAULT_FILTERS.remoteOnly) params.set("remoteOnly", snapshot.remoteOnly ? "1" : "0");
+  if (snapshot.manifestGapOnly !== viewer.DEFAULT_FILTERS.manifestGapOnly) params.set("manifestGapOnly", snapshot.manifestGapOnly ? "1" : "0");
   if (snapshot.withText !== viewer.DEFAULT_FILTERS.withText) params.set("withText", snapshot.withText ? "1" : "0");
   if (snapshot.withMedia !== viewer.DEFAULT_FILTERS.withMedia) params.set("withMedia", snapshot.withMedia ? "1" : "0");
   if (snapshot.showCameo !== viewer.DEFAULT_FILTERS.showCameo) params.set("showCameo", snapshot.showCameo ? "1" : "0");
@@ -510,6 +552,9 @@ viewer.showPageLoadingModal = function showPageLoadingModal(options = {}) {
   const message = String(options.message || "").trim() || "Updating the gallery and selected details.";
   els.pageLoadingTitle.textContent = title;
   els.pageLoadingMessage.textContent = message;
+  if (els.pageLoadingProgress) {
+    els.pageLoadingProgress.textContent = String(options.progress || "").trim();
+  }
   els.pageLoadingModal.classList.remove("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "false");
 };
@@ -518,6 +563,85 @@ viewer.hidePageLoadingModal = function hidePageLoadingModal() {
   const { els } = viewer;
   els.pageLoadingModal.classList.add("hidden");
   els.pageLoadingModal.setAttribute("aria-hidden", "true");
+  if (els.pageLoadingProgress) {
+    els.pageLoadingProgress.textContent = "";
+  }
+};
+
+viewer.formatBuildProgress = function formatBuildProgress(progress = null) {
+  if (!progress) return "";
+  const message = String(progress.message || "").trim();
+  const detail = String(progress.detail || "").trim();
+  const current = Number.isFinite(progress.current) ? progress.current : null;
+  const total = Number.isFinite(progress.total) ? progress.total : null;
+  const unit = String(progress.unit || "").trim();
+  const ratio = current != null && total != null && total > 0
+    ? `${current}/${total}${unit ? ` ${unit}${total === 1 ? "" : "s"}` : ""}`
+    : "";
+  return [message, detail, ratio].filter(Boolean).join(" ");
+};
+
+viewer.clearBuildProgressPoll = function clearBuildProgressPoll() {
+  if (!viewer.buildProgressPollTimer) return;
+  window.clearTimeout(viewer.buildProgressPollTimer);
+  viewer.buildProgressPollTimer = null;
+};
+
+viewer.pollBuildProgress = async function pollBuildProgress(options = {}) {
+  viewer.clearBuildProgressPoll();
+  const {
+    title = "Building library…",
+    message = "Scanning manifests and local files.",
+    showModalIfBuilding = false,
+    onlyWhenNoCachedIndex = false,
+  } = options;
+
+  try {
+    const response = await fetch("/api/build-status");
+    const payload = await response.json();
+    if (!response.ok) return;
+
+    viewer.state.buildProgress = payload?.progress || {
+      active: false,
+      phase: "idle",
+      message: "",
+      detail: "",
+      current: null,
+      total: null,
+      unit: null,
+      startedAt: null,
+      updatedAt: null,
+      error: null,
+    };
+
+    const shouldShowModal = Boolean(payload?.isBuilding)
+      && showModalIfBuilding
+      && (!onlyWhenNoCachedIndex || !payload?.hasCachedIndex);
+    const progressText = viewer.formatBuildProgress(viewer.state.buildProgress);
+
+    if (shouldShowModal) {
+      viewer.showPageLoadingModal({
+        title,
+        message,
+        progress: progressText,
+      });
+    } else if (
+      viewer.els.pageLoadingModal
+      && viewer.els.pageLoadingProgress
+      && !viewer.els.pageLoadingModal.classList.contains("hidden")
+    ) {
+      viewer.els.pageLoadingProgress.textContent = progressText;
+    }
+
+    if (viewer.renderIndexStatus) viewer.renderIndexStatus();
+
+    if (payload?.isBuilding) {
+      viewer.buildProgressPollTimer = window.setTimeout(() => {
+        viewer.buildProgressPollTimer = null;
+        void viewer.pollBuildProgress(options);
+      }, viewer.BUILD_PROGRESS_POLL_MS);
+    }
+  } catch {}
 };
 
 viewer.clearStartupRefreshNotice = function clearStartupRefreshNotice() {

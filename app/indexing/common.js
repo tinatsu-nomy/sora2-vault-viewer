@@ -71,6 +71,41 @@ function extractIdTokens(value) {
   return [...matches];
 }
 
+function normalizeSortableIdCore(value) {
+  if (!value) return "";
+  const text = String(value).trim().toLowerCase();
+  if (!text) return "";
+
+  const patterns = [
+    /^s_([a-z0-9]+)(?:-attachment-\d+)?$/i,
+    /^task_([a-z0-9]+)$/i,
+    /^gen_([a-z0-9]+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+
+  return text;
+}
+
+function sortableIdCoreForItem(item) {
+  const candidates = [
+    item?.genId,
+    item?.generationId,
+    item?.postId,
+    item?.taskId,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeSortableIdCore(candidate);
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
 function sortableDuration(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (value == null) return null;
@@ -124,9 +159,11 @@ module.exports = {
   extractIdTokens,
   isCustomUserSource,
   normalizeSourceMemberships,
+  normalizeSortableIdCore,
   parseDateValue,
   parseJson,
   pickPrimarySource,
   slugForText,
+  sortableIdCoreForItem,
   sortableDuration,
 };
