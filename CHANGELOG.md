@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.2.6.2 (v0.2.6-2)
+
+### Viewer Menu, Filters, And Detail UX
+
+- Moved `Clipboard` and `Options` into a compact top-right `Menu`
+- Added the current app version inside that menu
+- Added avatar description toggles for `posted by` and `cameo` entries in the detail panel
+- Added likes and recent-post ordering for copied poster usernames
+- Added clipboard helpers for `post_id`, `gen_id`, and `task_id`
+- Added `Remote files` and `No manifest` quick filters
+- Added `Poster most posts first` and `ID core` sorting in advanced filters
+- Added streaming manifest parsing so very large manifest JSON files can still be indexed
+- Replaced the `Manifest supplement` excerpt with a full manifest-backed tree view that shows nested fields in collapsible sections
+
+### Diagnostics And Indexing
+
+- Added source diagnostics that show per-source directory paths, raw file counts, unique IDs from TXT, and matched/indexed totals
+- Added rebuild progress reporting so startup and rescan work shows which phase is currently running
+- Relaxed local-to-manifest matching so exact `gen_id` / `post_id` matches still attach even when source bucket names differ
+- Added support for nested remix and creator layouts in `sora2_data`
+
+### Cache Workflow And Security
+
+- Kept cached-startup SQLite behavior and one-shot renew-on-start maintenance controls
+- Patched the transitive `@xmldom/xmldom` dependency to `0.8.13` to clear the current npm security audit alert
+
 ## v0.2.6.1
 
 ### Viewer Menu And Detail UX
