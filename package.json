@@ -18,6 +18,9 @@
     "electron": "^39.8.5",
     "electron-builder": "^26.0.12"
   },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.13"
+  },
   "build": {
     "appId": "local.sora2.vault-viewer",
     "productName": "Sora2 Vault Viewer",
