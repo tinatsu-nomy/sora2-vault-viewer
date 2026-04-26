@@ -434,10 +434,48 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   };
 }
 
+function manifestItemMatchesTarget(parsedItem, targetItem) {
+  if (!parsedItem || !targetItem) return false;
+  if (parsedItem.id && targetItem.id && parsedItem.id === targetItem.id) return true;
+
+  const targetGenIds = [targetItem.genId, targetItem.generationId].filter(Boolean);
+  const parsedGenIds = [parsedItem.genId, parsedItem.generationId].filter(Boolean);
+  if (targetGenIds.length && !targetGenIds.some((value) => parsedGenIds.includes(value))) return false;
+  if (targetItem.postId && parsedItem.postId !== targetItem.postId) return false;
+  if (targetItem.taskId && parsedItem.taskId !== targetItem.taskId) return false;
+
+  const hasIdentityMatch = targetGenIds.length || targetItem.postId || targetItem.taskId;
+  if (hasIdentityMatch) return true;
+
+  return parsedItem.source === (targetItem.manifestSource || targetItem.source)
+    && String(parsedItem.date || "") === String(targetItem.date || "")
+    && String(parsedItem.prompt || "") === String(targetItem.prompt || "");
+}
+
+async function loadManifestSupplement(manifestPath, targetItem) {
+  if (!manifestPath || !targetItem) return null;
+
+  let matchedSupplement = null;
+  await streamManifestItems(manifestPath, async (rawItem, itemIndex) => {
+    if (matchedSupplement) return;
+    const parsedItem = parseManifestItem(rawItem, manifestPath, targetItem.manifestExportedAt || null, itemIndex);
+    if (!manifestItemMatchesTarget(parsedItem, targetItem)) return;
+    matchedSupplement = {
+      manifestFile: path.basename(manifestPath),
+      manifestItemIndex: itemIndex,
+      manifestExportedAt: targetItem.manifestExportedAt || null,
+      item: rawItem,
+    };
+  });
+
+  return matchedSupplement;
+}
+
 module.exports = {
   isSupportedManifestFileName,
   buildManifestSearchText,
   listManifestFiles,
+  loadManifestSupplement,
   manifestDedupeKeyFromItem,
   parseManifestItem,
   readManifestDescriptor,

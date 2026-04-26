@@ -296,7 +296,7 @@ async function buildIndex({
     unit: "source",
   });
 
-  await attachLocalFiles(entries, lookupMap, sourceDirs, {
+  const localAttachResult = await attachLocalFiles(entries, lookupMap, sourceDirs, {
     txtRecordCache,
     onProgress: reportProgress,
   });
@@ -317,6 +317,53 @@ async function buildIndex({
   let localOnlyItemsCount = 0;
   let withLocalMediaCount = 0;
   let withLocalTextCount = 0;
+  const sourceDiagnostics = new Map();
+
+  for (const entry of localAttachResult?.sourceDiagnostics || []) {
+    sourceDiagnostics.set(entry.source, {
+      ...entry,
+      indexedItems: 0,
+      primaryItems: 0,
+      manifestItems: 0,
+      localOnlyItems: 0,
+      remoteOnlyItems: 0,
+      itemsWithAnyLocalMedia: 0,
+      itemsWithAnyLocalText: 0,
+      itemsWithSourceLocalMedia: 0,
+      itemsWithSourceLocalText: 0,
+    });
+  }
+
+  function ensureSourceDiagnostics(source) {
+    if (!source) return null;
+    if (!sourceDiagnostics.has(source)) {
+      sourceDiagnostics.set(source, {
+        source,
+        directoryPath: sourceDirs[source] || null,
+        files: 0,
+        mp4Files: 0,
+        txtFiles: 0,
+        fileGroups: 0,
+        mediaGroups: 0,
+        textGroups: 0,
+        matchedGroups: 0,
+        unmatchedGroups: 0,
+        uniqueGenerationIds: 0,
+        uniquePostIds: 0,
+        uniqueTaskIds: 0,
+        indexedItems: 0,
+        primaryItems: 0,
+        manifestItems: 0,
+        localOnlyItems: 0,
+        remoteOnlyItems: 0,
+        itemsWithAnyLocalMedia: 0,
+        itemsWithAnyLocalText: 0,
+        itemsWithSourceLocalMedia: 0,
+        itemsWithSourceLocalText: 0,
+      });
+    }
+    return sourceDiagnostics.get(source);
+  }
 
   for (const entry of items) {
     const dateSortMs = parseDateValue(entry.date);
@@ -354,6 +401,17 @@ async function buildIndex({
     if (entry.hasLocalText) withLocalTextCount += 1;
     for (const source of entry.sourceMemberships || [entry.source]) {
       if (source) sourceSet.add(source);
+      const diagnostics = ensureSourceDiagnostics(source);
+      if (!diagnostics) continue;
+      diagnostics.indexedItems += 1;
+      if (entry.source === source) diagnostics.primaryItems += 1;
+      if (entry.kind === "manifest") diagnostics.manifestItems += 1;
+      if (entry.kind === "local-only") diagnostics.localOnlyItems += 1;
+      if (entry.kind === "manifest" && !entry.hasLocalMedia && !entry.hasLocalText) diagnostics.remoteOnlyItems += 1;
+      if (entry.hasLocalMedia) diagnostics.itemsWithAnyLocalMedia += 1;
+      if (entry.hasLocalText) diagnostics.itemsWithAnyLocalText += 1;
+      if (entry.localVariants?.[source]?.mediaPath) diagnostics.itemsWithSourceLocalMedia += 1;
+      if (entry.localVariants?.[source]?.txtPath) diagnostics.itemsWithSourceLocalText += 1;
     }
   }
 
@@ -365,7 +423,7 @@ async function buildIndex({
   const statsSourceOrder = [...new Set([
     ...sourceOrder,
     ...sourceSet,
-  ])];
+  ])].filter((source) => sourceSet.has(source));
   statsSourceOrder.sort(compareSourceKeys);
 
   const stats = {
@@ -376,6 +434,9 @@ async function buildIndex({
     withLocalText: withLocalTextCount,
     sources: [...sourceSet].sort(compareSourceKeys),
     sourceOrder: statsSourceOrder,
+    sourceDiagnostics: statsSourceOrder
+      .map((source) => ensureSourceDiagnostics(source))
+      .filter(Boolean),
     manifests,
     manifestErrors,
     database: { ...(databaseStatus || {}) },

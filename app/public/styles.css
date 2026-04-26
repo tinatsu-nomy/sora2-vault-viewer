@@ -451,6 +451,78 @@ h2 {
   line-height: 1.45;
 }
 
+.stats-table-wrap {
+  margin-top: 12px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.stats-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(20, 22, 28, 0.98);
+  color: #d4d9e6;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+}
+
+.stats-table tbody tr:last-child th,
+.stats-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stats-table tbody th {
+  color: #111216;
+  font-weight: 700;
+}
+
+.stats-table tbody td {
+  color: #111216;
+}
+
+.stats-source-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 280px;
+}
+
+.stats-source-name {
+  color: #111216;
+  font-weight: 700;
+}
+
+.stats-source-path {
+  color: #4f5868;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
 .toolbar {
   display: grid;
   gap: 14px;
@@ -832,6 +904,14 @@ button:disabled {
 .summary-card.summary-card-light small,
 .summary-card.summary-card-light .subtle {
   color: #111216;
+}
+
+.summary-card.summary-card-light .stats-glossary span:first-child {
+  color: #111216;
+}
+
+.summary-card.summary-card-light .stats-glossary span:last-child {
+  color: #4f5868;
 }
 
 .content {
@@ -1590,6 +1670,93 @@ button:disabled {
   color: #f4f6fb;
   text-decoration: none;
   font-weight: 700;
+}
+
+.manifest-tree {
+  display: grid;
+  gap: 10px;
+}
+
+.manifest-tree-node,
+.manifest-tree-row {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.manifest-tree-node summary,
+.manifest-tree-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.manifest-tree-node summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+}
+
+.manifest-tree-node summary::-webkit-details-marker {
+  display: none;
+}
+
+.manifest-tree-node summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.manifest-tree-node[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.manifest-tree-children {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.manifest-tree-key {
+  color: var(--text);
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.manifest-tree-key-empty {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.manifest-tree-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.manifest-tree-value {
+  color: #d7dbe6;
+  text-align: right;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.manifest-tree-value-empty,
+.manifest-tree-value-null {
+  color: #98a2b7;
+}
+
+.manifest-tree-value-boolean {
+  color: #b9d4ff;
+}
+
+.manifest-tree-value-number {
+  color: #ffe0a3;
 }
 
 @media (min-width: 2200px) and (max-width: 2999px) and (orientation: landscape) {

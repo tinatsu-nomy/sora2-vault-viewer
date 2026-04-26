@@ -306,7 +306,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
     };
   }
 
-  function queryItems({ joins, whereClause, orderBy, values, limit, offset }) {
+  function queryItems({ joins, whereClause, orderBy, values, limit, offset, extraSelect = "" }) {
     const database = getDb();
     if (!database) return null;
 
@@ -342,6 +342,7 @@ function createStore({ enabled, dbPath, appDataDir, schemaVersion }) {
         items.thumb_url AS thumbUrl,
         items.has_local_media AS hasLocalMedia,
         items.has_local_text AS hasLocalText
+        ${extraSelect}
       ${fromClause}
       ${whereClause}
       ${orderBy}

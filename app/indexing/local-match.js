@@ -48,10 +48,47 @@ async function walkFiles(dirPath) {
   return results;
 }
 
+function createSourceDiagnostics(source, fileCount = 0, directoryPath = null) {
+  return {
+    source,
+    directoryPath,
+    files: fileCount,
+    mp4Files: 0,
+    txtFiles: 0,
+    fileGroups: 0,
+    mediaGroups: 0,
+    textGroups: 0,
+    matchedGroups: 0,
+    unmatchedGroups: 0,
+    _generationIds: new Set(),
+    _postIds: new Set(),
+    _taskIds: new Set(),
+  };
+}
+
+function finalizeSourceDiagnostics(diagnostics) {
+  return {
+    source: diagnostics.source,
+    directoryPath: diagnostics.directoryPath || null,
+    files: diagnostics.files,
+    mp4Files: diagnostics.mp4Files,
+    txtFiles: diagnostics.txtFiles,
+    fileGroups: diagnostics.fileGroups,
+    mediaGroups: diagnostics.mediaGroups,
+    textGroups: diagnostics.textGroups,
+    matchedGroups: diagnostics.matchedGroups,
+    unmatchedGroups: diagnostics.unmatchedGroups,
+    uniqueGenerationIds: diagnostics._generationIds.size,
+    uniquePostIds: diagnostics._postIds.size,
+    uniqueTaskIds: diagnostics._taskIds.size,
+  };
+}
+
 function localAttachmentForGroup(group, localRecord) {
+  const effectiveSource = group.effectiveSource || localRecord.effectiveSource || localRecord.declaredSource || localRecord.source || null;
   return {
     mediaPath: group.mediaPath || null,
-    source: group.source || localRecord.source || null,
+    source: effectiveSource,
     txtPath: group.txtPath || null,
     txtEncoding: localRecord.encoding,
     parsed: {
@@ -104,6 +141,43 @@ function sourceUsername(source) {
   return normalizeUsername(source.slice(3));
 }
 
+function pathSegmentsRelativeTo(rootDir, filePath) {
+  if (!rootDir || !filePath) return [];
+  const relativePath = path.relative(rootDir, path.dirname(filePath));
+  return relativePath
+    .split(path.sep)
+    .map((segment) => String(segment || "").trim())
+    .filter(Boolean);
+}
+
+function deriveNestedCreatorsSource(source, rootDir, filePath) {
+  if (source !== "v2_creators") return null;
+  const segments = pathSegmentsRelativeTo(rootDir, filePath);
+  if (!segments.length) return null;
+
+  const charactersIndex = segments.indexOf("characters");
+  if (charactersIndex >= 0) {
+    const characterName = segments[charactersIndex + 1];
+    const subtype = segments[charactersIndex + 2] || null;
+    if (characterName) {
+      if (subtype === "drafts") return `v2_char_drafts_@${characterName}`;
+      if (subtype === "posts") return `v2_char_@${characterName}`;
+    }
+    return null;
+  }
+
+  const username = segments[0];
+  if (username && username !== "characters") {
+    return `v2_@${username}`;
+  }
+
+  return null;
+}
+
+function effectiveLocalSource(localRecord) {
+  return localRecord?.effectiveSource || localRecord?.declaredSource || localRecord?.source || null;
+}
+
 function usernamesForEntry(entry) {
   return new Set(
     [
@@ -149,7 +223,7 @@ function localOwnerMetadata(source, localRecord) {
 function sourceMatchesEntry(entry, localRecord) {
   const entryManifestSources = normalizeSourceMemberships(entry?.manifestSources || [entry?.manifestSource].filter(Boolean));
   const localDeclaredSource = localRecord?.declaredSource || null;
-  const localSource = localRecord?.source || null;
+  const localSource = effectiveLocalSource(localRecord);
 
   if (!entryManifestSources.length) return false;
   if (localDeclaredSource && entryManifestSources.includes(localDeclaredSource)) return true;
@@ -253,10 +327,13 @@ function applyCustomSourceAliases(entries, sourceDirs) {
 async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null, onProgress = null } = {}) {
   const unmatchedLocals = new Map();
   const sourceEntries = Object.entries(sourceDirs);
+  const sourceDiagnostics = new Map();
 
   for (const [sourceIndex, [source, dirPath]] of sourceEntries.entries()) {
     const grouped = new Map();
     const filePaths = await walkFiles(dirPath);
+    const diagnostics = createSourceDiagnostics(source, filePaths.length, dirPath);
+    sourceDiagnostics.set(source, diagnostics);
 
     onProgress?.({
       phase: "local-files",
@@ -272,13 +349,22 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
       if (!grouped.has(stem)) grouped.set(stem, {});
       const group = grouped.get(stem);
       const ext = path.extname(filePath).toLowerCase();
-      if (ext === ".mp4") group.mediaPath = filePath;
-      if (ext === ".txt") group.txtPath = filePath;
+      if (ext === ".mp4") {
+        group.mediaPath = filePath;
+        diagnostics.mp4Files += 1;
+      }
+      if (ext === ".txt") {
+        group.txtPath = filePath;
+        diagnostics.txtFiles += 1;
+      }
       group.source = source;
     }
+    diagnostics.fileGroups = grouped.size;
 
     let processedGroups = 0;
     for (const group of grouped.values()) {
+      if (group.mediaPath) diagnostics.mediaGroups += 1;
+      if (group.txtPath) diagnostics.textGroups += 1;
       const localRecord = group.txtPath
         ? await parseTxtRecord(group.txtPath, source, txtRecordCache)
         : {
@@ -299,6 +385,16 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
             idTokens: extractIdTokens(group.mediaPath),
             filePath: group.mediaPath,
           };
+
+      const representativePath = group.txtPath || group.mediaPath || localRecord.filePath || null;
+      const derivedSource = deriveNestedCreatorsSource(source, dirPath, representativePath);
+      const effectiveSource = derivedSource || localRecord.declaredSource || source;
+      localRecord.derivedSource = derivedSource;
+      localRecord.effectiveSource = effectiveSource;
+      group.effectiveSource = effectiveSource;
+      if (localRecord.generationId) diagnostics._generationIds.add(localRecord.generationId);
+      if (localRecord.postId) diagnostics._postIds.add(localRecord.postId);
+      if (localRecord.taskId) diagnostics._taskIds.add(localRecord.taskId);
 
       processedGroups += 1;
       if (processedGroups === 1 || processedGroups === grouped.size || processedGroups % 100 === 0) {
@@ -347,14 +443,16 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
       }
 
       if (matchedEntry && !matchedTie) {
-        attachLocalVariant(matchedEntry, source, localAttachmentForGroup(group, localRecord));
+        diagnostics.matchedGroups += 1;
+        attachLocalVariant(matchedEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
       } else {
+        diagnostics.unmatchedGroups += 1;
         const unmatchedKey = localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem;
         const unmatchedId = `local:${unmatchedKey}`;
         const existingEntry = unmatchedLocals.get(unmatchedId);
-        const ownerMetadata = localOwnerMetadata(source, localRecord);
+        const ownerMetadata = localOwnerMetadata(effectiveSource, localRecord);
         if (existingEntry) {
-          attachLocalVariant(existingEntry, source, localAttachmentForGroup(group, localRecord));
+          attachLocalVariant(existingEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
           existingEntry.date = existingEntry.date || localRecord.date;
           existingEntry.prompt = existingEntry.prompt || localRecord.prompt;
           existingEntry.ratio = existingEntry.ratio || localRecord.aspectRatio || null;
@@ -386,8 +484,8 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
         const unmatchedEntry = {
           id: unmatchedId,
           kind: "local-only",
-          source,
-          sourceMemberships: [source],
+          source: effectiveSource,
+          sourceMemberships: [effectiveSource],
           manifestSource: localRecord.declaredSource || null,
           manifestSources: normalizeSourceMemberships([localRecord.declaredSource || null]),
           date: localRecord.date,
@@ -415,7 +513,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
           idTokens: localRecord.idTokens,
           local: null,
         };
-        attachLocalVariant(unmatchedEntry, source, localAttachmentForGroup(group, localRecord));
+        attachLocalVariant(unmatchedEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
         unmatchedLocals.set(unmatchedId, unmatchedEntry);
       }
     }
@@ -426,6 +524,13 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
   }
 
   applyCustomSourceAliases(entries, sourceDirs);
+
+  return {
+    sourceDiagnostics: sourceEntries
+      .map(([source]) => sourceDiagnostics.get(source))
+      .filter(Boolean)
+      .map(finalizeSourceDiagnostics),
+  };
 }
 
 module.exports = {

@@ -6,6 +6,7 @@ const { URL } = require("url");
 const { buildIndex } = require("./indexer");
 const { classifyDirEntry } = require("./fs-utils");
 const { compareSourceKeys } = require("./indexing/common");
+const { loadManifestSupplement } = require("./indexing/manifest");
 const { createStore } = require("./store");
 const { createSerializers } = require("./http/serializers");
 const { createListingService } = require("./search/listing");
@@ -124,6 +125,26 @@ async function discoverSourceDirs(dataDir) {
     const resolvedEntry = await classifyDirEntry(dataDir, entry);
     if (resolvedEntry.type !== "directory") continue;
     if (!/^sora_v2_.+/i.test(entry.name)) continue;
+    if (/^sora_v2_remixes$/i.test(entry.name)) {
+      const nestedSources = [
+        ["v2_remix_children", "downstream"],
+        ["v2_remix_parents", "parents"],
+      ];
+
+      for (const [sourceKey, childName] of nestedSources) {
+        const nestedPath = path.join(resolvedEntry.path, childName);
+        try {
+          const nestedStats = await fsp.stat(nestedPath);
+          if (nestedStats.isDirectory()) {
+            sourceDirs[sourceKey] = nestedPath;
+          }
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+      continue;
+    }
+
     const sourceKey = entry.name.replace(/^sora_/i, "");
     sourceDirs[sourceKey] = resolvedEntry.path;
   }
@@ -512,7 +533,15 @@ async function handleRequest(request, response) {
       const itemId = decodeURIComponent(url.pathname.replace("/api/item/", ""));
       const item = listingService.itemDetails(index, itemId);
       if (!item) return json(response, 404, { error: "Item not found" });
-      return json(response, 200, serializers.serializeDetailItem(item));
+      const detailItem = { ...item };
+      if (detailItem.manifestFile) {
+        try {
+          detailItem.manifestSupplement = await loadManifestSupplement(detailItem.manifestFile, detailItem);
+        } catch (error) {
+          detailItem.manifestSupplementError = `${error.code || "MANIFEST_SUPPLEMENT_ERROR"}: ${error.message}`;
+        }
+      }
+      return json(response, 200, serializers.serializeDetailItem(detailItem));
     }
 
     if (url.pathname === "/api/posters") {

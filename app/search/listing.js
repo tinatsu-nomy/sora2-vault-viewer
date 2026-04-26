@@ -8,6 +8,10 @@ function createListingService({
   serializeListItem,
   serializeListRow,
 }) {
+  function isPosterPostSort(sort) {
+    return sort === "poster-posts-desc" || sort === "poster-posts-asc";
+  }
+
   function idCorePresenceOrder(columnName = "items.sort_id_core") {
     return `CASE WHEN COALESCE(${columnName}, '') = '' THEN 1 ELSE 0 END`;
   }
@@ -28,6 +32,22 @@ function createListingService({
         return "ORDER BY COALESCE(items.like_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
       case "likes-asc":
         return "ORDER BY COALESCE(items.like_count, 0) ASC, COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+      case "poster-posts-desc":
+        return `
+          ORDER BY CASE WHEN COALESCE(items.poster_username, '') = '' THEN 1 ELSE 0 END ASC,
+                   COALESCE(posterPostCount, 0) DESC,
+                   items.poster_username COLLATE NOCASE ASC,
+                   COALESCE(items.date_sort_ms, -9223372036854775808) DESC,
+                   items.id DESC
+        `;
+      case "poster-posts-asc":
+        return `
+          ORDER BY CASE WHEN COALESCE(items.poster_username, '') = '' THEN 1 ELSE 0 END ASC,
+                   COALESCE(posterPostCount, 0) ASC,
+                   items.poster_username COLLATE NOCASE ASC,
+                   COALESCE(items.date_sort_ms, -9223372036854775808) ASC,
+                   items.id ASC
+        `;
       case "prompt-asc":
         return "ORDER BY COALESCE(items.prompt, '') COLLATE NOCASE ASC, items.id ASC";
       case "prompt-desc":
@@ -193,6 +213,14 @@ function createListingService({
 
   function sortItems(items, params, activeSourceOrder) {
     const sorted = [...items];
+    const posterPostCounts = new Map();
+    if (isPosterPostSort(params.sort)) {
+      for (const item of items) {
+        const posterUsername = String(item?.posterUsername || "").trim();
+        if (!posterUsername) continue;
+        posterPostCounts.set(posterUsername, Number(posterPostCounts.get(posterUsername) || 0) + 1);
+      }
+    }
     sorted.sort((left, right) => {
       const leftPrompt = left.prompt || "";
       const rightPrompt = right.prompt || "";
@@ -200,6 +228,12 @@ function createListingService({
       const rightViews = Number(right.viewCount || 0);
       const leftLikes = Number(left.likeCount || 0);
       const rightLikes = Number(right.likeCount || 0);
+      const leftPosterUsername = String(left.posterUsername || "").trim();
+      const rightPosterUsername = String(right.posterUsername || "").trim();
+      const leftPosterPostCount = Number(posterPostCounts.get(leftPosterUsername) || 0);
+      const rightPosterPostCount = Number(posterPostCounts.get(rightPosterUsername) || 0);
+      const leftMissingPoster = leftPosterUsername ? 0 : 1;
+      const rightMissingPoster = rightPosterUsername ? 0 : 1;
       const leftIdCore = String(left.sortIdCore || "");
       const rightIdCore = String(right.sortIdCore || "");
       const leftMissingIdCore = leftIdCore ? 0 : 1;
@@ -223,6 +257,18 @@ function createListingService({
           return rightLikes - leftLikes || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
         case "likes-asc":
           return leftLikes - rightLikes || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+        case "poster-posts-desc":
+          return leftMissingPoster - rightMissingPoster
+            || rightPosterPostCount - leftPosterPostCount
+            || leftPosterUsername.localeCompare(rightPosterUsername, "ja")
+            || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER)
+            || right.id.localeCompare(left.id);
+        case "poster-posts-asc":
+          return leftMissingPoster - rightMissingPoster
+            || leftPosterPostCount - rightPosterPostCount
+            || leftPosterUsername.localeCompare(rightPosterUsername, "ja")
+            || (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER)
+            || left.id.localeCompare(right.id);
         case "prompt-asc":
           return leftPrompt.localeCompare(rightPrompt, "ja");
         case "prompt-desc":
@@ -300,6 +346,13 @@ function createListingService({
     const { joins, where, values } = queryParts;
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const orderBy = listingOrderBy(params.sort, activeSourceOrder);
+    const extraSelect = isPosterPostSort(params.sort)
+      ? `,
+        CASE
+          WHEN COALESCE(items.poster_username, '') = '' THEN 0
+          ELSE COUNT(*) OVER (PARTITION BY items.poster_username)
+        END AS posterPostCount`
+      : "";
 
     const queryResult = store.queryItems({
       joins,
@@ -308,6 +361,7 @@ function createListingService({
       values,
       limit: params.limit,
       offset: params.offset,
+      extraSelect,
     });
     if (!queryResult) return null;
 

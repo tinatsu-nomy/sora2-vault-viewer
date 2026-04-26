@@ -31,6 +31,75 @@ function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function formatInteger(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return numeric.toLocaleString("en-US");
+}
+
+function manifestValueSummary(value) {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (value && typeof value === "object") return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? "" : "s"}`;
+  return "";
+}
+
+function manifestPrimitiveMarkup(value) {
+  if (value == null) return '<span class="manifest-tree-value manifest-tree-value-null">null</span>';
+  if (typeof value === "boolean") return `<span class="manifest-tree-value manifest-tree-value-boolean">${value}</span>`;
+  if (typeof value === "number") return `<span class="manifest-tree-value manifest-tree-value-number">${escapeHtml(String(value))}</span>`;
+  if (typeof value === "string" && value === "") return '<span class="manifest-tree-value manifest-tree-value-empty">""</span>';
+  return `<span class="manifest-tree-value">${escapeHtml(String(value))}</span>`;
+}
+
+function manifestNodeMarkup(label, value, depth = 0) {
+  const isArray = Array.isArray(value);
+  const isObject = Boolean(value) && typeof value === "object" && !isArray;
+  if (!isArray && !isObject) {
+    return `
+      <div class="manifest-tree-row">
+        <span class="manifest-tree-key">${escapeHtml(label)}</span>
+        ${manifestPrimitiveMarkup(value)}
+      </div>
+    `;
+  }
+
+  const entries = isArray
+    ? value.map((entry, index) => [`[${index}]`, entry])
+    : Object.entries(value);
+  const childMarkup = entries.length
+    ? entries.map(([childLabel, childValue]) => manifestNodeMarkup(childLabel, childValue, depth + 1)).join("")
+    : '<div class="manifest-tree-row"><span class="manifest-tree-key manifest-tree-key-empty">empty</span></div>';
+  const summaryText = manifestValueSummary(value);
+
+  return `
+    <details class="manifest-tree-node" ${depth === 0 ? "open" : ""}>
+      <summary>
+        <span class="manifest-tree-key">${escapeHtml(label)}</span>
+        ${summaryText ? `<span class="manifest-tree-meta">${escapeHtml(summaryText)}</span>` : ""}
+      </summary>
+      <div class="manifest-tree-children">
+        ${childMarkup}
+      </div>
+    </details>
+  `;
+}
+
+function renderManifestSupplementMarkup(item) {
+  if (item.manifestSupplementError) {
+    return `<div class="text-box">${escapeHtml(item.manifestSupplementError)}</div>`;
+  }
+
+  if (!item.manifestSupplement) return "";
+  return `
+    <div class="manifest-tree">
+      ${manifestNodeMarkup("manifestFile", item.manifestSupplement.manifestFile)}
+      ${manifestNodeMarkup("manifestItemIndex", item.manifestSupplement.manifestItemIndex)}
+      ${manifestNodeMarkup("manifestExportedAt", item.manifestSupplement.manifestExportedAt)}
+      ${manifestNodeMarkup("item", item.manifestSupplement.item)}
+    </div>
+  `;
+}
+
 function formatResolution(width, height) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return "";
   return `${width} x ${height}`;
@@ -611,6 +680,29 @@ function renderStats() {
   const manifestSummary = manifestTotal > manifestShown
     ? `<div class="subtle">Showing ${escapeHtml(String(manifestShown))} of ${escapeHtml(String(manifestTotal))} manifests.</div>`
     : "";
+  const diagnosticsRows = (stats.sourceDiagnostics || [])
+    .map((entry) => `
+      <tr>
+        <th scope="row">
+          <div class="stats-source-cell">
+            <span class="stats-source-name">${escapeHtml(viewer.sourceDisplayName(entry.source) || entry.source || "unknown")}</span>
+            <span class="stats-source-path" title="${escapeHtml(entry.directoryPath || "No direct source directory recorded")}">${escapeHtml(entry.directoryPath || "No direct source directory recorded")}</span>
+          </div>
+        </th>
+        <td>${formatInteger(entry.files)}</td>
+        <td>${formatInteger(entry.mp4Files)}</td>
+        <td>${formatInteger(entry.txtFiles)}</td>
+        <td>${formatInteger(entry.uniqueGenerationIds)}</td>
+        <td>${formatInteger(entry.uniquePostIds)}</td>
+        <td>${formatInteger(entry.matchedGroups)}</td>
+        <td>${formatInteger(entry.unmatchedGroups)}</td>
+        <td>${formatInteger(entry.indexedItems)}</td>
+        <td>${formatInteger(entry.itemsWithSourceLocalMedia)}</td>
+        <td>${formatInteger(entry.remoteOnlyItems)}</td>
+        <td>${formatInteger(entry.localOnlyItems)}</td>
+      </tr>
+    `)
+    .join("");
   const sourceCount = Array.isArray(stats.sourceOrder)
     ? stats.sourceOrder.length
     : Array.isArray(stats.sources)
@@ -664,6 +756,37 @@ function renderStats() {
           ${manifestRows || '<div class="subtle">No manifest files detected</div>'}
         </article>
         <article class="summary-card db-card summary-card-wide summary-card-light">
+          <strong>Source Diagnostics</strong>
+          <div class="subtle">Raw local file counts, unique IDs from TXT, and how many items ended up visible in the viewer for each source.</div>
+          ${
+            diagnosticsRows
+              ? `
+                <div class="stats-table-wrap">
+                  <table class="stats-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Source</th>
+                        <th scope="col">Files</th>
+                        <th scope="col">MP4</th>
+                        <th scope="col">TXT</th>
+                        <th scope="col">Unique gen</th>
+                        <th scope="col">Unique post</th>
+                        <th scope="col">Matched</th>
+                        <th scope="col">Unmatched</th>
+                        <th scope="col">Indexed</th>
+                        <th scope="col">Source media</th>
+                        <th scope="col">Remote</th>
+                        <th scope="col">Gap</th>
+                      </tr>
+                    </thead>
+                    <tbody>${diagnosticsRows}</tbody>
+                  </table>
+                </div>
+              `
+              : '<div class="subtle">No source diagnostics available yet.</div>'
+          }
+        </article>
+        <article class="summary-card db-card summary-card-wide summary-card-light">
           <strong>Counts guide</strong>
           <div class="stats-glossary">
             <div><span>Library</span><span>Total indexed items across manifest-backed and local-only entries.</span></div>
@@ -671,6 +794,14 @@ function renderStats() {
             <div><span>Text</span><span>Items with a local TXT sidecar file.</span></div>
             <div><span>Manifest Gap</span><span>Local-only items that were found on disk but could not be matched to manifest metadata.</span></div>
             <div><span>Sources</span><span>Unique source buckets currently indexed, such as profile, liked, drafts, user, and char sources.</span></div>
+            <div><span>Source</span><span>The source bucket name plus the directory path currently scanned for that source.</span></div>
+            <div><span>Files / MP4 / TXT</span><span>Raw local filesystem counts for that source directory before dedupe.</span></div>
+            <div><span>Unique gen / Unique post</span><span>Distinct Generation ID and Post ID values parsed from TXT sidecars in that source.</span></div>
+            <div><span>Matched / Unmatched</span><span>Local file groups that did or did not match a manifest-backed item while indexing that source.</span></div>
+            <div><span>Indexed</span><span>Final viewer items whose source memberships include that source after dedupe and merge.</span></div>
+            <div><span>Source media</span><span>Indexed items that actually use a local media attachment from that source directory.</span></div>
+            <div><span>Remote</span><span>Manifest-backed items in that source that still have no local media or TXT attached.</span></div>
+            <div><span>Gap</span><span>Local-only items currently attributed to that source.</span></div>
             <div><span>xx-yy of nnnn items</span><span>The current page range inside the filtered result set.</span></div>
           </div>
         </article>
@@ -1108,16 +1239,7 @@ async function renderDetail() {
     : item.kind === "local-only"
       ? "No manifest match (local-only)"
       : "Unknown";
-  const manifestSupplementLines = [
-    item.posterUsername && item.profileUserId
-      ? `@${item.posterUsername} : ${item.profileUserId} (profile.user_id)`
-      : "",
-    ...(item.cameoProfiles || [])
-      .filter((profile) => profile?.username && profile?.userId)
-      .map((profile) => `@${profile.username} : ${profile.userId} (cameo profile.user_id)`),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const manifestSupplementMarkup = renderManifestSupplementMarkup(item);
   const detailVideoMutedAttr = state.detailVideoMuted ? " muted" : "";
 
   els.detail.innerHTML = `
@@ -1184,13 +1306,13 @@ async function renderDetail() {
     }
 
     ${
-      manifestSupplementLines
+      manifestSupplementMarkup
         ? `
           <div class="detail-card">
             <details class="detail-disclosure">
               <summary>Manifest supplement</summary>
               <div class="detail-disclosure-content">
-                <div class="text-box">${escapeHtml(manifestSupplementLines)}</div>
+                ${manifestSupplementMarkup}
               </div>
             </details>
           </div>

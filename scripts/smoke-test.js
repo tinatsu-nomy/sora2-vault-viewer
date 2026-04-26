@@ -16,8 +16,14 @@ const CAMEOS_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_cameo_drafts");
 const REAL_CAMEOS_DIR = path.join(LINK_TARGETS_DIR, "sora_v2_cameos");
 const REAL_CAMEOS_DRAFT_DIR = path.join(LINK_TARGETS_DIR, "sora_v2_cameo_drafts");
 const USER_DIR = path.join(DATA_DIR, "sora_v2_@bucket_user");
+const CREATORS_DIR = path.join(DATA_DIR, "sora_v2_creators");
+const NESTED_USER_DIR = path.join(CREATORS_DIR, "nested_creator");
+const NESTED_CHAR_POSTS_DIR = path.join(CREATORS_DIR, "nested_owner", "characters", "nestedcat", "posts");
 const CHAR_DIR = path.join(DATA_DIR, "sora_v2_char_@sparklecat");
 const CHAR_DRAFT_DIR = path.join(DATA_DIR, "sora_v2_char_drafts_@sparklecat");
+const REMIX_ROOT_DIR = path.join(DATA_DIR, "sora_v2_remixes");
+const REMIX_CHILDREN_DIR = path.join(REMIX_ROOT_DIR, "downstream", "s_root_smoke111");
+const REMIX_PARENTS_DIR = path.join(REMIX_ROOT_DIR, "parents", "remix_parent_user");
 const CHARACTER_DIR = path.join(DATA_DIR, "sora_characters_@smoke_user");
 const APP_DATA_DIR = path.join(TMP_ROOT, "app-data");
 const MANIFEST_FILE_NAME = "soravault_manifest_merged_2026-04-18_102546_part01.json";
@@ -47,8 +53,8 @@ function createDirectoryLink(targetDir, linkPath) {
 function baseFixtureManifest() {
   return {
     exported_at: "2026-04-15T00:00:00Z",
-    total: 7,
-    scan_sources: ["v2_profile", "v2_liked", "v2_user"],
+    total: 11,
+    scan_sources: ["v2_profile", "v2_liked", "v2_user", "v2_remix_children", "v2_remix_parents"],
     items: [
       {
         source: "v2_profile",
@@ -197,6 +203,78 @@ function baseFixtureManifest() {
         },
       },
       {
+        source: "v2_remix_children",
+        genId: "gen_remixchild111",
+        taskId: "task_remixchild111",
+        postId: "s_remixchild111",
+        date: "2026-04-09",
+        prompt: "Nested remix child prompt",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 8,
+        isLiked: false,
+        _raw: {
+          profile: { username: "remix_child_user", user_id: "user-remix-child" },
+          post: {
+            id: "s_remixchild111",
+            text: "Nested remix child prompt",
+            like_count: 2,
+            view_count: 6,
+            attachments: [{ generation_id: "gen_remixchild111" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_remix_parents",
+        genId: "gen_remixparent111",
+        taskId: "task_remixparent111",
+        postId: "s_remixparent111",
+        date: "2026-04-08",
+        prompt: "Nested remix parent prompt",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 9,
+        isLiked: false,
+        _raw: {
+          profile: { username: "remix_parent_user", user_id: "user-remix-parent" },
+          post: {
+            id: "s_remixparent111",
+            text: "Nested remix parent prompt",
+            like_count: 4,
+            view_count: 11,
+            attachments: [{ generation_id: "gen_remixparent111" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
+        source: "v2_user",
+        genId: "gen_nestedcreator111",
+        taskId: "task_nestedcreator111",
+        postId: "s_nestedcreator111",
+        date: "2026-04-07",
+        prompt: "Nested creator manifest prompt",
+        width: 720,
+        height: 1280,
+        ratio: "9:16",
+        duration: 10,
+        isLiked: false,
+        _raw: {
+          profile: { username: "nested_creator", user_id: "user-nested-creator" },
+          post: {
+            id: "s_nestedcreator111",
+            text: "Nested creator manifest prompt",
+            like_count: 8,
+            view_count: 21,
+            attachments: [{ generation_id: "gen_nestedcreator111" }],
+            cameo_profiles: [],
+          },
+        },
+      },
+      {
         source: "v2_profile",
         date: "2026-04-13",
         prompt: "Fallback manifest alpha",
@@ -254,8 +332,12 @@ function writeFixtureData() {
   createDirectoryLink(REAL_CAMEOS_DIR, CAMEOS_DIR);
   createDirectoryLink(REAL_CAMEOS_DRAFT_DIR, CAMEOS_DRAFT_DIR);
   fs.mkdirSync(USER_DIR, { recursive: true });
+  fs.mkdirSync(NESTED_USER_DIR, { recursive: true });
+  fs.mkdirSync(NESTED_CHAR_POSTS_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DIR, { recursive: true });
   fs.mkdirSync(CHAR_DRAFT_DIR, { recursive: true });
+  fs.mkdirSync(REMIX_CHILDREN_DIR, { recursive: true });
+  fs.mkdirSync(REMIX_PARENTS_DIR, { recursive: true });
   fs.mkdirSync(CHARACTER_DIR, { recursive: true });
 
   resetFixtureManifest();
@@ -268,6 +350,28 @@ function writeFixtureData() {
     path.join(PROFILE_DIR, "2026-04-15_gen_smoke123.txt"),
     [
       "Source: v2_profile",
+      "Generation ID: gen_smoke123",
+      "Task ID: task_shared",
+      "Post ID: s_smoke123",
+      "Date: 2026-04-15",
+      "Duration: 5",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: yes",
+      "Prompt",
+      "Smoke test prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(LIKED_DIR, "2026-04-15_gen_smoke123.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(LIKED_DIR, "2026-04-15_gen_smoke123.txt"),
+    [
+      "Source: v2_liked",
       "Generation ID: gen_smoke123",
       "Task ID: task_shared",
       "Post ID: s_smoke123",
@@ -344,6 +448,94 @@ function writeFixtureData() {
       "Liked: no",
       "Prompt",
       "Bucket user shared item",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(NESTED_USER_DIR, "2026-04-07_gen_nestedcreator111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(NESTED_USER_DIR, "2026-04-07_gen_nestedcreator111.txt"),
+    [
+      "Source: v2_user",
+      "Generation ID: gen_nestedcreator111",
+      "Task ID: task_nestedcreator111",
+      "Post ID: s_nestedcreator111",
+      "Date: 2026-04-07",
+      "Duration: 10",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Nested creator manifest prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(NESTED_CHAR_POSTS_DIR, "2026-04-06_gen_nestedchar111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(NESTED_CHAR_POSTS_DIR, "2026-04-06_gen_nestedchar111.txt"),
+    [
+      "Source: v2_char_posts",
+      "Generation ID: gen_nestedchar111",
+      "Task ID: task_nestedchar111",
+      "Post ID: s_nestedchar111",
+      "Date: 2026-04-06",
+      "Duration: 6",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Nested creator char prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(REMIX_CHILDREN_DIR, "2026-04-09_gen_remixchild111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(REMIX_CHILDREN_DIR, "2026-04-09_gen_remixchild111.txt"),
+    [
+      "Source: v2_remix_children",
+      "Generation ID: gen_remixchild111",
+      "Task ID: task_remixchild111",
+      "Post ID: s_remixchild111",
+      "Date: 2026-04-09",
+      "Duration: 8",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Nested remix child prompt",
+    ].join("\n"),
+    "utf8",
+  );
+
+  fs.writeFileSync(
+    path.join(REMIX_PARENTS_DIR, "2026-04-08_gen_remixparent111.mp4"),
+    Buffer.from("000000186674797069736F6D0000020069736F6D69736F32", "hex"),
+  );
+  fs.writeFileSync(
+    path.join(REMIX_PARENTS_DIR, "2026-04-08_gen_remixparent111.txt"),
+    [
+      "Source: v2_remix_parents",
+      "Generation ID: gen_remixparent111",
+      "Task ID: task_remixparent111",
+      "Post ID: s_remixparent111",
+      "Date: 2026-04-08",
+      "Duration: 9",
+      "Resolution: 720x1280",
+      "Aspect ratio: 9:16",
+      "Liked: no",
+      "Prompt",
+      "Nested remix parent prompt",
     ].join("\n"),
     "utf8",
   );
@@ -554,7 +746,7 @@ async function assertRestartUsesCachedIndexUntilRebuild() {
   try {
     await waitForServer(firstServer);
     const firstPayload = await fetchIndexPayload(PORT);
-    assert.equal(firstPayload.stats.totalItems, 10, "Expected initial startup to index the fixture manifest and local-only char/cameos sources");
+    assert.equal(firstPayload.stats.totalItems, 14, "Expected initial startup to index the fixture manifest and local-only char/cameos sources");
   } finally {
     await new Promise((resolve) => firstServer.close(resolve));
   }
@@ -567,11 +759,11 @@ async function assertRestartUsesCachedIndexUntilRebuild() {
     await waitForServer(secondServer);
     const immediatePayload = await fetchIndexPayload(PORT);
     assert.equal(
-      [10, 11].includes(immediatePayload.stats.totalItems),
+      [14, 15].includes(immediatePayload.stats.totalItems),
       true,
       "Expected restart to return either the cached index or a fully rebuilt index",
     );
-    if (immediatePayload.stats.totalItems === 10) {
+    if (immediatePayload.stats.totalItems === 14) {
       assert.equal(
         immediatePayload.indexStatus?.isRefreshing,
         false,
@@ -584,7 +776,7 @@ async function assertRestartUsesCachedIndexUntilRebuild() {
 
     const secondPayload = await waitForCondition(async () => {
       const payload = await fetchIndexPayload(PORT);
-      return payload.stats.totalItems === 11 ? payload : null;
+      return payload.stats.totalItems === 15 ? payload : null;
     });
     assert(
       secondPayload.items.some((item) => item.genId === "gen_after_restart"),
@@ -603,7 +795,7 @@ async function assertRenewOnStartForcesFreshRebuild() {
   try {
     await waitForServer(firstServer);
     const firstPayload = await fetchIndexPayload(PORT);
-    assert.equal(firstPayload.stats.totalItems, 11, "Expected renew fixture warmup to build the current cache");
+    assert.equal(firstPayload.stats.totalItems, 15, "Expected renew fixture warmup to build the current cache");
     const scheduledResponse = await request(`http://127.0.0.1:${PORT}/api/renew-on-start`, { method: "POST" });
     assert.equal(scheduledResponse.status, 200, "Expected /api/renew-on-start to return 200");
     const scheduledPayload = JSON.parse(scheduledResponse.body);
@@ -621,7 +813,7 @@ async function assertRenewOnStartForcesFreshRebuild() {
     const renewedPayload = await fetchIndexPayload(PORT);
     assert.equal(
       renewedPayload.stats.totalItems,
-      12,
+      16,
       "Expected renew-on-start to ignore the old SQLite cache and rebuild immediately",
     );
     assert(
@@ -649,14 +841,37 @@ async function run() {
     await waitForServer(server);
 
     const indexPayload = await requestJson(`http://127.0.0.1:${PORT}/api/index`, "Expected /api/index to return 200");
-    assert.equal(indexPayload.items.length, 10, "Expected all base manifest and local-only fixture items to remain indexed");
-    assert.equal(indexPayload.stats.totalItems, 10, "Expected stats to report all indexed items");
-    assert.equal(indexPayload.stats.withLocalMedia, 6, "Expected merged items plus char and cameos sources to match local media pairs");
+    assert.equal(indexPayload.items.length, 14, "Expected all base manifest and local-only fixture items to remain indexed");
+    assert.equal(indexPayload.stats.totalItems, 14, "Expected stats to report all indexed items");
+    assert.equal(indexPayload.stats.withLocalMedia, 10, "Expected merged items plus char, cameos, remix, and nested creator sources to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
     assert(indexPayload.stats.sourceOrder.includes("v2_cameos"), "Expected cameos sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_cameo_drafts"), "Expected cameos draft sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_@sparklecat"), "Expected char sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_drafts_@sparklecat"), "Expected char draft sources to be included in source order");
+    assert(indexPayload.stats.sourceOrder.includes("v2_remix_children"), "Expected nested remix children sources to be included in source order");
+    assert(indexPayload.stats.sourceOrder.includes("v2_remix_parents"), "Expected nested remix parent sources to be included in source order");
+    assert(indexPayload.stats.sourceOrder.includes("v2_@nested_creator"), "Expected nested creator user directories to surface as custom user sources");
+    assert(indexPayload.stats.sourceOrder.includes("v2_char_@nestedcat"), "Expected nested creator char post directories to surface as char sources");
+    assert.equal(indexPayload.stats.sourceOrder.includes("v2_remixes"), false, "Expected the remix container directory not to leak as its own source");
+    assert.equal(indexPayload.stats.sourceOrder.includes("v2_creators"), false, "Expected the nested creator container directory not to leak as its own source");
+    const likedDiagnostics = indexPayload.stats.sourceDiagnostics.find((entry) => entry.source === "v2_liked");
+    assert(likedDiagnostics, "Expected source diagnostics to include the liked source");
+    assert.equal(likedDiagnostics.files, 2, "Expected liked diagnostics to count raw local files");
+    assert.equal(likedDiagnostics.mp4Files, 1, "Expected liked diagnostics to count local mp4 files");
+    assert.equal(likedDiagnostics.txtFiles, 1, "Expected liked diagnostics to count local txt files");
+    assert.equal(likedDiagnostics.directoryPath, LIKED_DIR, "Expected liked diagnostics to expose the scanned source directory");
+    assert.equal(likedDiagnostics.uniqueGenerationIds, 1, "Expected liked diagnostics to summarize unique generation IDs");
+    assert.equal(likedDiagnostics.uniquePostIds, 1, "Expected liked diagnostics to summarize unique post IDs");
+    assert.equal(likedDiagnostics.matchedGroups, 1, "Expected liked diagnostics to count matched local groups");
+    assert.equal(likedDiagnostics.unmatchedGroups, 0, "Expected liked diagnostics to report no unmatched liked groups");
+    assert.equal(likedDiagnostics.indexedItems, 2, "Expected liked diagnostics to report manifest-backed items in the liked source");
+    assert.equal(likedDiagnostics.itemsWithSourceLocalMedia, 1, "Expected liked diagnostics to report source-local media attachments");
+    assert.deepEqual(
+      indexPayload.stats.manifests[0].scanSources,
+      ["v2_profile", "v2_liked", "v2_user", "v2_remix_children", "v2_remix_parents"],
+      "Expected /api/stats to expose manifest scan_sources metadata",
+    );
     const buildStatusPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/build-status`,
       "Expected /api/build-status to return 200",
@@ -675,8 +890,20 @@ async function run() {
     assert.equal(ambiguousItem.hasLocalMedia, false, "Expected shared task IDs not to attach the wrong local media");
     const sharedUserItem = indexPayload.items.find((item) => item.genId === "gen_user999");
     assert(sharedUserItem, "Expected the liked/user shared fixture item to be present");
-    assert.deepEqual(sharedUserItem.sourceMemberships, ["v2_liked", "v2_@bucket_user"]);
+    assert.deepEqual(sharedUserItem.sourceMemberships, ["v2_liked", "v2_user", "v2_@bucket_user"]);
     assert.equal(sharedUserItem.hasLocalMedia, true, "Expected the custom user directory to attach local media");
+    const nestedCreatorItem = indexPayload.items.find((item) => item.genId === "gen_nestedcreator111");
+    assert(nestedCreatorItem, "Expected the nested creator manifest fixture item to be present");
+    assert.equal(nestedCreatorItem.hasLocalMedia, true, "Expected nested creator media to attach to its manifest item");
+    assert(nestedCreatorItem.sourceMemberships.includes("v2_@nested_creator"), "Expected nested creator items to retain a custom user alias source membership");
+    const remixChildItem = indexPayload.items.find((item) => item.genId === "gen_remixchild111");
+    assert(remixChildItem, "Expected the nested remix child fixture item to be present");
+    assert.equal(remixChildItem.hasLocalMedia, true, "Expected nested remix child media to attach to its manifest item");
+    assert.deepEqual(remixChildItem.sourceMemberships, ["v2_remix_children"]);
+    const remixParentItem = indexPayload.items.find((item) => item.genId === "gen_remixparent111");
+    assert(remixParentItem, "Expected the nested remix parent fixture item to be present");
+    assert.equal(remixParentItem.hasLocalMedia, true, "Expected nested remix parent media to attach to its manifest item");
+    assert.deepEqual(remixParentItem.sourceMemberships, ["v2_remix_parents"]);
     const fallbackItems = indexPayload.items.filter((item) => item.prompt.startsWith("Fallback manifest"));
     assert.equal(fallbackItems.length, 2, "Expected identifier-less manifest items not to overwrite each other");
     for (const item of fallbackItems) {
@@ -743,6 +970,20 @@ async function run() {
     assert.equal(charDraftFilterPayload.items.length, 1, "Expected only the char draft local-only item to appear in char drafts filter");
     assert.equal(charDraftFilterPayload.items[0].genId, "gen_chardraft111");
 
+    const nestedCustomUserFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_@nested_creator")}`,
+      "Expected nested creator custom user filter search to return 200",
+    );
+    assert.equal(nestedCustomUserFilterPayload.items.length, 1, "Expected only the nested creator manifest item to appear in the custom user filter");
+    assert.equal(nestedCustomUserFilterPayload.items[0].genId, "gen_nestedcreator111");
+
+    const nestedCharFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_char_@nestedcat")}`,
+      "Expected nested creator char filter search to return 200",
+    );
+    assert.equal(nestedCharFilterPayload.items.length, 1, "Expected only the nested creator char local-only item to appear in the char filter");
+    assert.equal(nestedCharFilterPayload.items[0].genId, "gen_nestedchar111");
+
     const cameosFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=v2_cameos`,
       "Expected cameos filter search to return 200",
@@ -757,11 +998,27 @@ async function run() {
     assert.equal(cameosDraftFilterPayload.items.length, 1, "Expected only the cameos draft local-only item to appear in cameos drafts filter");
     assert.equal(cameosDraftFilterPayload.items[0].genId, "gen_cameodraft111");
 
+    const remixChildrenFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_remix_children`,
+      "Expected nested remix children filter search to return 200",
+    );
+    assert.equal(remixChildrenFilterPayload.items.length, 1, "Expected only the remix child manifest item to appear in the remix children filter");
+    assert.equal(remixChildrenFilterPayload.items[0].genId, "gen_remixchild111");
+    assert.equal(remixChildrenFilterPayload.items[0].hasLocalMedia, true, "Expected remix child filter results to keep local media attached");
+
+    const remixParentsFilterPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=v2_remix_parents`,
+      "Expected nested remix parents filter search to return 200",
+    );
+    assert.equal(remixParentsFilterPayload.items.length, 1, "Expected only the remix parent manifest item to appear in the remix parents filter");
+    assert.equal(remixParentsFilterPayload.items[0].genId, "gen_remixparent111");
+    assert.equal(remixParentsFilterPayload.items[0].hasLocalMedia, true, "Expected remix parent filter results to keep local media attached");
+
     const manifestGapPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?manifestGapOnly=1`,
       "Expected manifest-gap filter search to return 200",
     );
-    assert.equal(manifestGapPayload.items.length, 4, "Expected only local-only fixture items to appear in the manifest-gap filter");
+    assert.equal(manifestGapPayload.items.length, 5, "Expected only local-only fixture items to appear in the manifest-gap filter");
     assert(manifestGapPayload.items.every((item) => item.kind === "local-only"), "Expected manifest-gap filter items to all be local-only");
     assert(manifestGapPayload.items.every((item) => item.hasLocalMedia), "Expected manifest-gap fixture items to remain directly playable");
 
@@ -797,6 +1054,19 @@ async function run() {
       idCoreDescendingPayload.items.slice(0, 3).map((item) => item.genId),
       ["gen_user999", "gen_smoke123", "gen_other999"],
       "Expected ID core descending sort to reverse the shared core ordering while keeping ID-less items last",
+    );
+
+    const posterPostsDescendingPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}&sort=poster-posts-desc`,
+      "Expected poster post-count sort to return 200",
+    );
+    assert.deepEqual(
+      posterPostsDescendingPayload.items
+        .filter((item) => item.posterUsername)
+        .slice(0, 6)
+        .map((item) => item.posterUsername),
+      ["bucket_user", "fallback_alpha", "fallback_beta", "literal_marker", "other_user", "smoke_user"],
+      "Expected poster post-count sort ties to fall back to poster username order",
     );
 
     const recentPostersPayload = await requestJson(
@@ -881,7 +1151,9 @@ async function run() {
     );
     assert.equal(detailPayload.mediaUrl, "/media?id=gen_smoke123&kind=media");
     assert.equal(detailPayload.debug, null, "Expected debug payloads to be hidden by default");
-      assert.equal(detailPayload.local.txtUrl, "/media?id=gen_smoke123&kind=txt");
+    assert.equal(detailPayload.local.txtUrl, "/media?id=gen_smoke123&kind=txt");
+    assert.equal(detailPayload.manifestSupplement.item._raw.profile.user_id, "user-smoke", "Expected detail payload to expose nested manifest supplement profile data");
+    assert.equal(detailPayload.manifestSupplement.item._raw.post.like_count, 7, "Expected detail payload to expose nested manifest supplement post data");
       assert.equal(detailPayload.cameoProfiles.length, 1, "Expected cameo profile metadata to be preserved");
       assert.equal(detailPayload.cameoProfiles[0].username, "cameo.source.hero");
       assert.equal(detailPayload.posterDescription, "Primary smoke profile description.");

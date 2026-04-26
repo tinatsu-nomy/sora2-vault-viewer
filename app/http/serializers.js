@@ -85,6 +85,32 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
   function serializeStats(stats, databaseStatus) {
     const manifests = stats.manifests || [];
     const manifestPreview = manifests.slice(0, MAX_MANIFEST_PREVIEW);
+    const sourceDiagnostics = Array.isArray(stats.sourceDiagnostics)
+      ? stats.sourceDiagnostics.map((entry) => ({
+          source: entry.source,
+          directoryPath: entry.directoryPath || null,
+          files: Number(entry.files || 0),
+          mp4Files: Number(entry.mp4Files || 0),
+          txtFiles: Number(entry.txtFiles || 0),
+          fileGroups: Number(entry.fileGroups || 0),
+          mediaGroups: Number(entry.mediaGroups || 0),
+          textGroups: Number(entry.textGroups || 0),
+          matchedGroups: Number(entry.matchedGroups || 0),
+          unmatchedGroups: Number(entry.unmatchedGroups || 0),
+          uniqueGenerationIds: Number(entry.uniqueGenerationIds || 0),
+          uniquePostIds: Number(entry.uniquePostIds || 0),
+          uniqueTaskIds: Number(entry.uniqueTaskIds || 0),
+          indexedItems: Number(entry.indexedItems || 0),
+          primaryItems: Number(entry.primaryItems || 0),
+          manifestItems: Number(entry.manifestItems || 0),
+          localOnlyItems: Number(entry.localOnlyItems || 0),
+          remoteOnlyItems: Number(entry.remoteOnlyItems || 0),
+          itemsWithAnyLocalMedia: Number(entry.itemsWithAnyLocalMedia || 0),
+          itemsWithAnyLocalText: Number(entry.itemsWithAnyLocalText || 0),
+          itemsWithSourceLocalMedia: Number(entry.itemsWithSourceLocalMedia || 0),
+          itemsWithSourceLocalText: Number(entry.itemsWithSourceLocalText || 0),
+        }))
+      : [];
     return {
       appVersion: runtimePaths.appVersion || null,
       totalItems: stats.totalItems,
@@ -94,6 +120,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       withLocalText: stats.withLocalText,
       sources: stats.sources,
       sourceOrder: stats.sourceOrder || stats.sources || [],
+      sourceDiagnostics,
       manifestCount: manifests.length,
       manifestsTruncated: manifests.length > manifestPreview.length,
       manifestPreviewLimit: MAX_MANIFEST_PREVIEW,
@@ -101,6 +128,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
         file: fileNameOnly(manifest.file),
         exportedAt: manifest.exportedAt || null,
         total: manifest.total ?? null,
+        scanSources: Array.isArray(manifest.scanSources) ? manifest.scanSources : null,
       })),
       manifestErrors: (stats.manifestErrors || []).map((entry) => ({
         file: fileNameOnly(entry.file),
@@ -173,6 +201,8 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
             txtUrl: item.hasLocalText ? mediaUrlFor(item.id, "txt") : null,
           }
         : null,
+      manifestSupplement: item.manifestSupplement || null,
+      manifestSupplementError: item.manifestSupplementError || null,
       debug: debugMode
         ? {
             manifestFile: item.manifestFile || null,
