@@ -1,6 +1,7 @@
 sora*/
 node_modules/
 dist-electron/
+SoraVault*/
 *.exe
 
 # Local data and generated cache
