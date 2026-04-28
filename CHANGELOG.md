@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.6.2 (v0.2.6-2)
+## v0.2.6.3 (v0.2.6-3)
 
 ### Viewer Menu, Filters, And Detail UX
 
