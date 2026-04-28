@@ -49,6 +49,39 @@ function parseDateValue(value, { endOfDayIfDateOnly = false } = {}) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function parseSortTimestampValue(value) {
+  if (value == null || value === "") return null;
+
+  const normalizeNumericTimestamp = (numericValue) => {
+    if (!Number.isFinite(numericValue)) return null;
+    const absoluteValue = Math.abs(numericValue);
+    if (absoluteValue > 0 && absoluteValue < 1e12) {
+      return Math.round(numericValue * 1000);
+    }
+    return Math.round(numericValue);
+  };
+
+  if (typeof value === "number") {
+    return normalizeNumericTimestamp(value);
+  }
+
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(text)) {
+    return normalizeNumericTimestamp(Number(text));
+  }
+
+  return parseDateValue(text);
+}
+
+function pickPreferredSortTimestamp(...values) {
+  for (const value of values) {
+    const parsed = parseSortTimestampValue(value);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
 function basenameWithoutExt(filePath) {
   const path = require("path");
   return path.basename(filePath, path.extname(filePath));
@@ -161,7 +194,9 @@ module.exports = {
   normalizeSourceMemberships,
   normalizeSortableIdCore,
   parseDateValue,
+  parseSortTimestampValue,
   parseJson,
+  pickPreferredSortTimestamp,
   pickPrimarySource,
   slugForText,
   sortableIdCoreForItem,

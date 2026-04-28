@@ -4,10 +4,21 @@ function isUsernameOnlyQuery(text) {
   return /^@[!-~]+$/.test(text);
 }
 
+function unwrapQuotedUsernameQuery(text) {
+  const trimmed = String(text || "").trim();
+  if (trimmed.length < 3) return null;
+  const quote = trimmed[0];
+  if (!['"', "'", "`"].includes(quote)) return null;
+  if (trimmed.at(-1) !== quote) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  return isUsernameOnlyQuery(inner) ? inner : null;
+}
+
 function parseSearchQuery(value) {
   if (value == null) {
     return {
       textQuery: "",
+      usernameExacts: [],
       usernamePrefixes: [],
       forceSimpleTextSearch: false,
     };
@@ -17,6 +28,17 @@ function parseSearchQuery(value) {
   if (!text) {
     return {
       textQuery: "",
+      usernameExacts: [],
+      usernamePrefixes: [],
+      forceSimpleTextSearch: false,
+    };
+  }
+
+  const quotedUsername = unwrapQuotedUsernameQuery(text);
+  if (quotedUsername) {
+    return {
+      textQuery: "",
+      usernameExacts: [slugForText(quotedUsername.slice(1))],
       usernamePrefixes: [],
       forceSimpleTextSearch: false,
     };
@@ -25,6 +47,7 @@ function parseSearchQuery(value) {
   if (!/\s/.test(text) && isUsernameOnlyQuery(text)) {
     return {
       textQuery: "",
+      usernameExacts: [],
       usernamePrefixes: [slugForText(text.slice(1))],
       forceSimpleTextSearch: false,
     };
@@ -32,6 +55,7 @@ function parseSearchQuery(value) {
 
   return {
     textQuery: slugForText(text),
+    usernameExacts: [],
     usernamePrefixes: [],
     forceSimpleTextSearch: /\s|@/.test(text),
   };
@@ -77,6 +101,7 @@ function parseListParams(url) {
 
   return {
     query,
+    usernameExacts: searchQuery.usernameExacts,
     usernamePrefixes: searchQuery.usernamePrefixes,
     forceSimpleTextSearch: searchQuery.forceSimpleTextSearch,
     source,

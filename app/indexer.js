@@ -3,10 +3,12 @@ const path = require("path");
 
 const {
   addLookup,
+  basenameWithoutExt,
   compareSourceKeys,
   normalizeSourceMemberships,
   parseDateValue,
   parseJson,
+  pickPreferredSortTimestamp,
   pickPrimarySource,
   slugForText,
   sortableIdCoreForItem,
@@ -68,6 +70,28 @@ function mergeProfileMetadata(baseProfile, incomingProfile) {
   };
 }
 
+function searchableUsernamesForEntry(entry) {
+  const usernames = new Set();
+  const posterUsername = String(entry?.posterUsername || "").trim().replace(/^@+/, "").toLowerCase();
+  if (posterUsername) usernames.add(posterUsername);
+
+  const cameoProfiles = Array.isArray(entry?.cameoProfiles) ? entry.cameoProfiles : [];
+  if (cameoProfiles.length) {
+    for (const profile of cameoProfiles) {
+      const username = String(profile?.username || "").trim().replace(/^@+/, "").toLowerCase();
+      if (username && username !== posterUsername) usernames.add(username);
+    }
+    return [...usernames];
+  }
+
+  for (const usernameValue of entry?.cameoOwnerUsernames || []) {
+    const username = String(usernameValue || "").trim().replace(/^@+/, "").toLowerCase();
+    if (username && username !== posterUsername) usernames.add(username);
+  }
+
+  return [...usernames];
+}
+
 function mergeManifestEntries(baseEntry, incomingEntry) {
   const sourceMemberships = normalizeSourceMemberships([
     ...(baseEntry.sourceMemberships || [baseEntry.source].filter(Boolean)),
@@ -99,6 +123,10 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     ...(baseEntry.idTokens || []),
     ...(incomingEntry.idTokens || []),
   ])].filter(Boolean);
+  const searchableUsernames = [...new Set([
+    ...(baseEntry.searchableUsernames || searchableUsernamesForEntry(baseEntry)),
+    ...(incomingEntry.searchableUsernames || searchableUsernamesForEntry(incomingEntry)),
+  ])].filter(Boolean);
 
   return {
     ...baseEntry,
@@ -107,6 +135,9 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     sourceMemberships,
     manifestSources,
     date: baseEntry.date || incomingEntry.date || null,
+    updatedAt: baseEntry.updatedAt || incomingEntry.updatedAt || null,
+    postedAt: baseEntry.postedAt || incomingEntry.postedAt || null,
+    createdAt: baseEntry.createdAt || incomingEntry.createdAt || null,
     prompt: baseEntry.prompt || incomingEntry.prompt || "",
     manifestExportedAt: baseEntry.manifestExportedAt || incomingEntry.manifestExportedAt || null,
     manifestFile: baseEntry.manifestFile || incomingEntry.manifestFile || null,
@@ -129,6 +160,7 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
     ownerUsernames,
     cameoOwnerUsernames,
     cameoProfiles,
+    searchableUsernames,
     isLiked: Boolean(baseEntry.isLiked || incomingEntry.isLiked),
     previewUrl: baseEntry.previewUrl || incomingEntry.previewUrl || null,
     downloadUrl: baseEntry.downloadUrl || incomingEntry.downloadUrl || null,
@@ -140,6 +172,7 @@ function mergeManifestEntries(baseEntry, incomingEntry) {
 }
 
 async function buildIndex({
+  collectInventories = false,
   dataDir,
   sourceDirs,
   databaseStatus,
@@ -150,6 +183,8 @@ async function buildIndex({
   const entries = new Map();
   const lookupMap = new Map();
   const manifests = [];
+  const manifestInventory = [];
+  const manifestItems = [];
   const manifestErrors = [];
   const manifestFiles = await listManifestFiles(dataDir);
   const manifestDescriptors = [];
@@ -179,6 +214,8 @@ async function buildIndex({
         exportedAtMs: parseManifestExportedAt(descriptor.exportedAt),
         total: descriptor.total,
         scanSources: descriptor.scanSources,
+        size: descriptor.size,
+        mtimeMs: descriptor.mtimeMs,
       });
     } catch (error) {
       manifestErrors.push({
@@ -205,6 +242,19 @@ async function buildIndex({
     total: descriptor.total,
     scanSources: descriptor.scanSources,
   })));
+  if (collectInventories) {
+    manifestInventory.push(...manifestDescriptors.map((descriptor) => ({
+      manifestPath: descriptor.file,
+      size: descriptor.size ?? null,
+      mtimeMs: descriptor.mtimeMs ?? null,
+      exportedAt: descriptor.exportedAt,
+      exportedAtMs: descriptor.exportedAtMs,
+      totalItems: descriptor.total ?? null,
+      scanSourcesJson: JSON.stringify(Array.isArray(descriptor.scanSources) ? descriptor.scanSources : []),
+      contentHash: null,
+      lastSeenAt: new Date().toISOString(),
+    })));
+  }
 
   reportProgress({
     phase: "manifest-items",
@@ -236,6 +286,51 @@ async function buildIndex({
 
         const dedupeKey = manifestDedupeKeyFromItem(item);
         const entry = parseManifestItem(item, descriptor.file, descriptor.exportedAt, itemIndex);
+        if (collectInventories) {
+          manifestItems.push({
+            manifestPath: descriptor.file,
+            itemOrdinal: itemIndex,
+            dedupeKey,
+            itemId: entry.id,
+            source: entry.source || null,
+            manifestSource: entry.manifestSource || null,
+            sourceMembershipsJson: JSON.stringify(entry.sourceMemberships || []),
+            manifestSourcesJson: JSON.stringify(entry.manifestSources || []),
+            genId: entry.genId || null,
+            generationId: entry.generationId || null,
+            taskId: entry.taskId || null,
+            postId: entry.postId || null,
+            date: entry.date || null,
+            updatedAt: entry.updatedAt || null,
+            postedAt: entry.postedAt || null,
+            createdAt: entry.createdAt || null,
+            sortTimestampMs: entry.sortTimestampMs ?? null,
+            prompt: entry.prompt || "",
+            width: entry.width || null,
+            height: entry.height || null,
+            ratio: entry.ratio || null,
+            duration: entry.duration || null,
+            likeCount: typeof entry.likeCount === "number" ? entry.likeCount : null,
+            viewCount: typeof entry.viewCount === "number" ? entry.viewCount : null,
+            posterUsername: entry.posterUsername || null,
+            profileUserId: entry.profileUserId || null,
+            posterDisplayName: entry.posterDisplayName || null,
+            posterDescription: entry.posterDescription || null,
+            ownerUsername: entry.ownerUsername || null,
+            ownerUsernamesJson: JSON.stringify(entry.ownerUsernames || []),
+            cameoOwnerUsernamesJson: JSON.stringify(entry.cameoOwnerUsernames || []),
+            cameoProfilesJson: JSON.stringify(entry.cameoProfiles || []),
+            searchableUsernamesJson: JSON.stringify(entry.searchableUsernames || searchableUsernamesForEntry(entry)),
+            isLiked: entry.isLiked ? 1 : 0,
+            previewUrl: entry.previewUrl || null,
+            downloadUrl: entry.downloadUrl || null,
+            thumbUrl: entry.thumbUrl || null,
+            permalink: entry.permalink || null,
+            idTokensJson: JSON.stringify(entry.idTokens || []),
+            manifestSearchText: entry.manifestSearchText || "",
+            payloadJson: JSON.stringify(item),
+          });
+        }
         if (dedupeKey && seenManifestKeys.has(dedupeKey)) {
           const existingEntryId = seenManifestKeys.get(dedupeKey);
           const existingEntry = entries.get(existingEntryId);
@@ -297,6 +392,7 @@ async function buildIndex({
   });
 
   const localAttachResult = await attachLocalFiles(entries, lookupMap, sourceDirs, {
+    collectInventories,
     txtRecordCache,
     onProgress: reportProgress,
   });
@@ -310,6 +406,9 @@ async function buildIndex({
     unit: null,
   });
   await txtRecordCache.persist();
+  const txtParseCacheSnapshot = collectInventories
+    ? await txtRecordCache.snapshot()
+    : [];
 
   const items = [...entries.values()];
   const sourceSet = new Set();
@@ -367,6 +466,11 @@ async function buildIndex({
 
   for (const entry of items) {
     const dateSortMs = parseDateValue(entry.date);
+    const cardSortMs = pickPreferredSortTimestamp(
+      entry.postedAt,
+      entry.createdAt,
+      entry.date,
+    );
     const searchText = [
       entry.prompt,
       entry.source,
@@ -374,6 +478,9 @@ async function buildIndex({
       entry.manifestSource,
       ...(entry.manifestSources || []),
       entry.date,
+      entry.updatedAt,
+      entry.postedAt,
+      entry.createdAt,
       entry.genId,
       entry.generationId,
       entry.taskId,
@@ -390,6 +497,15 @@ async function buildIndex({
 
     entry.cameoCount = countUniqueCameoProfiles(entry);
     entry.dateSortMs = dateSortMs;
+    entry.cardSortMs = cardSortMs;
+    entry.searchableUsernames = searchableUsernamesForEntry(entry);
+    entry.sortTimestampSource = entry.postedAt != null
+      ? "posted_at"
+      : entry.createdAt != null
+        ? "_created_at"
+        : entry.date != null
+          ? "date"
+          : null;
     entry.sortIdCore = sortableIdCoreForItem(entry);
     entry.hasLocalMedia = Boolean(entry.local?.mediaPath);
     entry.hasLocalText = Boolean(entry.local?.txtPath);
@@ -416,7 +532,7 @@ async function buildIndex({
   }
 
   items.sort((left, right) => {
-    return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER)
+    return (right.cardSortMs ?? Number.MIN_SAFE_INTEGER) - (left.cardSortMs ?? Number.MIN_SAFE_INTEGER)
       || right.id.localeCompare(left.id);
   });
 
@@ -427,6 +543,16 @@ async function buildIndex({
   statsSourceOrder.sort(compareSourceKeys);
 
   const stats = {
+    inventoryCounts: collectInventories
+      ? {
+          manifestInventory: manifestInventory.length,
+          manifestItems: manifestItems.length,
+          sourceInventory: localAttachResult?.sourceInventory?.length || 0,
+          fileInventory: localAttachResult?.fileInventory?.length || 0,
+          groupInventory: localAttachResult?.groupInventory?.length || 0,
+          txtParseCache: txtParseCacheSnapshot.length,
+        }
+      : null,
     totalItems: items.length,
     manifestItems: manifestItemsCount,
     localOnlyItems: localOnlyItemsCount,
@@ -453,6 +579,44 @@ async function buildIndex({
 
   return {
     items,
+    inventories: collectInventories
+      ? {
+          fileInventory: localAttachResult?.fileInventory || [],
+          groupInventory: localAttachResult?.groupInventory || [],
+          manifestInventory,
+          manifestItems,
+          matchInventory: items.flatMap((entry) => Object.entries(entry.localVariants || {}).map(([source, attachment]) => ({
+            entryId: entry.id,
+            groupKey: `${String(source || "").toLowerCase()}::${basenameWithoutExt(attachment?.txtPath || attachment?.mediaPath || "")}`,
+            matchScore: 0,
+            reason: entry.kind === "manifest" ? "attached-local-variant" : "local-only",
+            matchedAt: new Date().toISOString(),
+          }))),
+          sourceInventory: localAttachResult?.sourceInventory || [],
+          txtParseCache: txtParseCacheSnapshot.map((entry) => ({
+            txtPath: entry.filePath,
+            size: entry.size,
+            mtimeMs: entry.mtimeMs,
+            encoding: entry.record?.encoding || null,
+            declaredSource: entry.record?.declaredSource || null,
+            generationId: entry.record?.generationId || null,
+            taskId: entry.record?.taskId || null,
+            postId: entry.record?.postId || null,
+            date: entry.record?.date || null,
+            duration: entry.record?.duration || null,
+            resolution: entry.record?.resolution || null,
+            aspectRatio: entry.record?.aspectRatio || null,
+            liked: entry.record?.liked || null,
+            authorUsername: entry.record?.authorUsername || null,
+            authorDisplayName: entry.record?.authorDisplayName || null,
+            cameoUsernamesJson: JSON.stringify(entry.record?.cameoUsernames || []),
+            prompt: entry.record?.prompt || "",
+            idTokensJson: JSON.stringify(entry.record?.idTokens || []),
+            parsedJson: JSON.stringify(entry.record || {}),
+            cacheVersion: 3,
+          })),
+        }
+      : null,
     stats,
     builtAt: new Date().toISOString(),
   };

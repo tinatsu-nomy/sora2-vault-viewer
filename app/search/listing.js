@@ -23,7 +23,7 @@ function createListingService({
       case "idcore-desc":
         return `ORDER BY ${idCorePresenceOrder()} ASC, COALESCE(items.sort_id_core, '') DESC, items.id DESC`;
       case "date-asc":
-        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) ASC, items.id ASC";
+        return "ORDER BY COALESCE(items.card_sort_ms, -9223372036854775808) ASC, items.id ASC";
       case "views-desc":
         return "ORDER BY COALESCE(items.view_count, 0) DESC, COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
       case "views-asc":
@@ -60,7 +60,7 @@ function createListingService({
         return sourceOrderByClause(activeSourceOrder);
       case "date-desc":
       default:
-        return "ORDER BY COALESCE(items.date_sort_ms, -9223372036854775808) DESC, items.id DESC";
+        return "ORDER BY COALESCE(items.card_sort_ms, -9223372036854775808) DESC, items.id DESC";
     }
   }
 
@@ -109,14 +109,37 @@ function createListingService({
     return `%\"${escapeLikePattern(prefix)}%`;
   }
 
+  function usernameJsonExactLikePattern(username) {
+    return `%\"${escapeLikePattern(username)}\"%`;
+  }
+
+  function itemMatchesUsernameExacts(item, exacts) {
+    if (!exacts?.length) return true;
+    const usernames = new Set(
+      (item?.searchableUsernames?.length
+        ? item.searchableUsernames
+        : [
+            item?.posterUsername,
+            ...(item?.cameoProfiles || []).map((profile) => profile?.username),
+            ...(item?.cameoOwnerUsernames || []),
+          ])
+        .filter(Boolean)
+        .map((value) => slugForText(value)),
+    );
+
+    return exacts.every((exact) => usernames.has(exact));
+  }
+
   function itemMatchesUsernamePrefixes(item, prefixes) {
     if (!prefixes?.length) return true;
     const usernames = new Set(
-      [
-        item?.posterUsername,
-        ...(item?.ownerUsernames || []),
-        ...(item?.cameoOwnerUsernames || []),
-      ]
+      (item?.searchableUsernames?.length
+        ? item.searchableUsernames
+        : [
+            item?.posterUsername,
+            ...(item?.cameoProfiles || []).map((profile) => profile?.username),
+            ...(item?.cameoOwnerUsernames || []),
+          ])
         .filter(Boolean)
         .map((value) => slugForText(value)),
     );
@@ -146,15 +169,24 @@ function createListingService({
       }
     }
 
+    for (const exact of params.usernameExacts) {
+      where.push(`(
+        LOWER(COALESCE(items.poster_username, '')) = ?
+        OR LOWER(COALESCE(items.searchable_usernames_json, '')) LIKE ? ESCAPE '\\'
+      )`);
+      values.push(
+        exact,
+        usernameJsonExactLikePattern(exact),
+      );
+    }
+
     for (const prefix of params.usernamePrefixes) {
       where.push(`(
         LOWER(COALESCE(items.poster_username, '')) LIKE ? ESCAPE '\\'
-        OR LOWER(COALESCE(items.owner_usernames_json, '')) LIKE ? ESCAPE '\\'
-        OR LOWER(COALESCE(items.cameo_owner_usernames_json, '')) LIKE ? ESCAPE '\\'
+        OR LOWER(COALESCE(items.searchable_usernames_json, '')) LIKE ? ESCAPE '\\'
       )`);
       values.push(
         usernamePrefixLikePattern(prefix),
-        usernameJsonPrefixLikePattern(prefix),
         usernameJsonPrefixLikePattern(prefix),
       );
     }
@@ -192,6 +224,9 @@ function createListingService({
   function filteredItems(index, params) {
     let filtered = Array.isArray(index?.items) ? index.items : [];
     if (params.query) filtered = filtered.filter((item) => item.searchText.includes(params.query));
+    if (params.usernameExacts.length) {
+      filtered = filtered.filter((item) => itemMatchesUsernameExacts(item, params.usernameExacts));
+    }
     if (params.usernamePrefixes.length) {
       filtered = filtered.filter((item) => itemMatchesUsernamePrefixes(item, params.usernamePrefixes));
     }
@@ -248,7 +283,7 @@ function createListingService({
             || rightIdCore.localeCompare(leftIdCore)
             || right.id.localeCompare(left.id);
         case "date-asc":
-          return (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
+          return (left.cardSortMs ?? Number.MIN_SAFE_INTEGER) - (right.cardSortMs ?? Number.MIN_SAFE_INTEGER) || left.id.localeCompare(right.id);
         case "views-desc":
           return rightViews - leftViews || (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
         case "views-asc":
@@ -284,7 +319,7 @@ function createListingService({
         }
         case "date-desc":
         default:
-          return (right.dateSortMs ?? Number.MIN_SAFE_INTEGER) - (left.dateSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
+          return (right.cardSortMs ?? Number.MIN_SAFE_INTEGER) - (left.cardSortMs ?? Number.MIN_SAFE_INTEGER) || right.id.localeCompare(left.id);
       }
     });
     return sorted;

@@ -33,6 +33,7 @@ const RETRY_PORT = 33230;
 process.env.PORT = String(PORT);
 process.env.SORA_DATA_DIR = DATA_DIR;
 process.env.SORA_ENABLE_SQLITE_CACHE = "1";
+process.env.SORA_INCREMENTAL_BASELINE = "1";
 process.env.SORA_BIND_HOST = "127.0.0.1";
 process.env.SORA_APP_DATA_DIR = APP_DATA_DIR;
 
@@ -79,6 +80,7 @@ function baseFixtureManifest() {
             id: "s_smoke123",
             text: "Smoke test prompt",
             caption: "Manifest only caption",
+            posted_at: 1777191650.898067,
             like_count: 7,
             view_count: 42,
             attachments: [{ generation_id: "gen_smoke123" }],
@@ -88,6 +90,9 @@ function baseFixtureManifest() {
                 user_id: "user-cameo-hero",
                 display_name: "Friendly Hero",
                 description: "Friendly cameo hero description.",
+                owner_profile: {
+                  username: "mizunosabon",
+                },
               },
             ],
           },
@@ -125,6 +130,9 @@ function baseFixtureManifest() {
                 user_id: "user-cameo-hero",
                 display_name: "Friendly Hero",
                 description: "Friendly cameo hero description.",
+                owner_profile: {
+                  username: "mizunosabon",
+                },
               },
             ],
           },
@@ -147,6 +155,7 @@ function baseFixtureManifest() {
           post: {
             id: "s_other999",
             text: "Ambiguous task item",
+            updated_at: "2026-04-24T10:20:30Z",
             like_count: 1,
             view_count: 3,
             attachments: [{ generation_id: "gen_other999" }],
@@ -171,6 +180,7 @@ function baseFixtureManifest() {
           post: {
             id: "s_user999",
             text: "Bucket user shared item",
+            _created_at: "2026-04-14T01:00:00Z",
             like_count: 5,
             view_count: 9,
             attachments: [{ generation_id: "gen_user999" }],
@@ -195,6 +205,7 @@ function baseFixtureManifest() {
           post: {
             id: "s_user999",
             text: "Bucket user shared item",
+            _created_at: "2026-04-14T01:00:00Z",
             like_count: 5,
             view_count: 9,
             attachments: [{ generation_id: "gen_user999" }],
@@ -294,6 +305,7 @@ function baseFixtureManifest() {
           profile: { username: "literal_marker" },
           post: {
             text: "Literal @smoke marker",
+            posted_at: "2026-04-23T08:00:00Z",
             cameo_profiles: [],
           },
         },
@@ -302,6 +314,7 @@ function baseFixtureManifest() {
         source: "v2_profile",
         date: "2026-04-11",
         prompt: "Fallback manifest beta",
+        updated_at: "2026-04-25T09:15:00Z",
         _raw: {
           profile: { username: "fallback_beta" },
           post: {
@@ -547,11 +560,14 @@ function writeFixtureData() {
   fs.writeFileSync(
     path.join(CHAR_DIR, "2026-04-11_gen_char111.txt"),
     [
-      "Source: v2_char_@sparklecat",
+      "Source: v2_char_posts",
       "Generation ID: gen_char111",
       "Task ID: task_char111",
       "Post ID: s_char111",
       "Date: 2026-04-11",
+      "Author: @charauthor",
+      "Display Name: Character Author",
+      "Cameos: @sparklecat",
       "Duration: 6",
       "Resolution: 720x1280",
       "Aspect ratio: 9:16",
@@ -845,6 +861,12 @@ async function run() {
     assert.equal(indexPayload.stats.totalItems, 14, "Expected stats to report all indexed items");
     assert.equal(indexPayload.stats.withLocalMedia, 10, "Expected merged items plus char, cameos, remix, and nested creator sources to match local media pairs");
     assert.equal(indexPayload.stats.database.configured, true, "Expected SQLite cache configuration metadata");
+    assert.equal(indexPayload.stats.inventoryCounts.manifestInventory, 1, "Expected manifest inventory rows to be reported");
+    assert.equal(indexPayload.stats.inventoryCounts.manifestItems, 11, "Expected manifest item inventory rows to be reported");
+    assert(indexPayload.stats.inventoryCounts.sourceInventory >= 10, "Expected source inventory rows to cover all discovered source directories");
+    assert(indexPayload.stats.inventoryCounts.fileInventory >= 20, "Expected file inventory rows to mirror all local fixture files");
+    assert(indexPayload.stats.inventoryCounts.groupInventory >= 10, "Expected grouped local inventory rows to mirror local fixture stems");
+    assert(indexPayload.stats.inventoryCounts.txtParseCache >= 10, "Expected TXT parse cache rows to mirror parsed TXT fixtures");
     assert(indexPayload.stats.sourceOrder.includes("v2_cameos"), "Expected cameos sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_cameo_drafts"), "Expected cameos draft sources to be included in source order");
     assert(indexPayload.stats.sourceOrder.includes("v2_char_@sparklecat"), "Expected char sources to be included in source order");
@@ -928,6 +950,31 @@ async function run() {
     );
     assert.equal(usernameNonPrefixSearchPayload.items.length, 0, "Expected non-prefix @username search not to match manifest usernames");
 
+    const ownedByUsernamePrefixSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=%40mizunosabon`,
+      "Expected owned-by @username prefix search to return 200",
+    );
+    assert.equal(ownedByUsernamePrefixSearchPayload.items.length, 0, "Expected @username search not to match owned-by usernames");
+
+    const exactQuotedUsernameSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("\"@smoke_user\"")}`,
+      "Expected quoted exact @username search to return 200",
+    );
+    assert.equal(exactQuotedUsernameSearchPayload.items.length, 1, "Expected quoted @username search to require an exact username match");
+    assert.equal(exactQuotedUsernameSearchPayload.items[0].posterUsername, "smoke_user");
+
+    const exactQuotedUsernameMissPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("\"@smoke\"")}`,
+      "Expected quoted non-exact @username search to return 200",
+    );
+    assert.equal(exactQuotedUsernameMissPayload.items.length, 0, "Expected quoted @username search not to behave like prefix search");
+
+    const exactQuotedOwnedByUsernameMissPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("\"@mizunosabon\"")}`,
+      "Expected quoted owned-by @username search to return 200",
+    );
+    assert.equal(exactQuotedOwnedByUsernameMissPayload.items.length, 0, "Expected quoted @username search not to match owned-by usernames");
+
     const literalAtSearchPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("@smoke marker")}`,
       "Expected spaced @ query to return 200",
@@ -941,6 +988,15 @@ async function run() {
     );
     assert.equal(profileFilterPayload.items.some((item) => item.genId === "gen_smoke123"), true, "Expected shared profile/liked item to appear in profile filter");
     assert.equal(profileFilterPayload.items.some((item) => item.genId === "gen_user999"), false, "Expected liked/user item not to appear in profile filter");
+    const profileSortOrder = profileFilterPayload.items.map((item) => item.prompt);
+    assert(
+      profileSortOrder.indexOf("Literal @smoke marker") < profileSortOrder.indexOf("Fallback manifest alpha"),
+      "Expected date-desc card sort to prioritize manifest posted_at over plain manifest date",
+    );
+    assert(
+      profileSortOrder.indexOf("Fallback manifest beta") > profileSortOrder.indexOf("Literal @smoke marker"),
+      "Expected date-desc card sort to ignore manifest updated_at when posted_at is available elsewhere",
+    );
 
     const likedFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=v2_liked`,
@@ -956,12 +1012,42 @@ async function run() {
     assert.equal(userFilterPayload.items.length, 1, "Expected only the shared liked/user item to appear in custom user filter");
     assert.equal(userFilterPayload.items[0].genId, "gen_user999");
 
+    const mixedSortPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_profile,v2_liked,v2_@bucket_user")}`,
+      "Expected mixed source search to return 200",
+    );
+    const mixedSortOrder = mixedSortPayload.items.map((item) => item.prompt);
+    assert(
+      mixedSortOrder.indexOf("Bucket user shared item") < mixedSortOrder.indexOf("Fallback manifest alpha"),
+      "Expected date-desc card sort to prioritize _created_at over TXT/local date fallback",
+    );
+
     const charFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_char_@sparklecat")}`,
       "Expected char source filter search to return 200",
     );
     assert.equal(charFilterPayload.items.length, 1, "Expected only the char local-only item to appear in char source filter");
     assert.equal(charFilterPayload.items[0].genId, "gen_char111");
+
+    const charCameoSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("@sparklecat")}`,
+      "Expected cameo username search to return 200",
+    );
+    assert.equal(
+      charCameoSearchPayload.items.some((item) => item.genId === "gen_char111"),
+      true,
+      "Expected flat char local-only items to be searchable by TXT cameo username metadata",
+    );
+
+    const charAuthorSearchPayload = await requestJson(
+      `http://127.0.0.1:${PORT}/api/index?query=${encodeURIComponent("@charauthor")}`,
+      "Expected author username search to return 200",
+    );
+    assert.equal(
+      charAuthorSearchPayload.items.some((item) => item.genId === "gen_char111"),
+      true,
+      "Expected flat char local-only items to be searchable by TXT author username metadata",
+    );
 
     const charDraftFilterPayload = await requestJson(
       `http://127.0.0.1:${PORT}/api/index?sources=${encodeURIComponent("v2_char_drafts_@sparklecat")}`,

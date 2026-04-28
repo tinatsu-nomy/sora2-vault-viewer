@@ -113,6 +113,7 @@ function createSerializers({ debugMode, enableSqliteCache, runtimePaths = {} }) 
       : [];
     return {
       appVersion: runtimePaths.appVersion || null,
+      inventoryCounts: stats.inventoryCounts || null,
       totalItems: stats.totalItems,
       manifestItems: stats.manifestItems,
       localOnlyItems: stats.localOnlyItems,

@@ -84,6 +84,10 @@ function finalizeSourceDiagnostics(diagnostics) {
   };
 }
 
+function makeGroupInventoryKey(source, stem) {
+  return `${String(source || "").toLowerCase()}::${String(stem || "").toLowerCase()}`;
+}
+
 function localAttachmentForGroup(group, localRecord) {
   const effectiveSource = group.effectiveSource || localRecord.effectiveSource || localRecord.declaredSource || localRecord.source || null;
   return {
@@ -139,6 +143,14 @@ function normalizeUsername(value) {
 function sourceUsername(source) {
   if (!source || !isCustomUserSource(source)) return "";
   return normalizeUsername(source.slice(3));
+}
+
+function isSpecificCharacterSource(source) {
+  return /^v2_char(?:_drafts)?_@/i.test(String(source || ""));
+}
+
+function prefersDirectorySpecificSource(source) {
+  return isCustomUserSource(source) || isSpecificCharacterSource(source);
 }
 
 function pathSegmentsRelativeTo(rootDir, filePath) {
@@ -202,8 +214,12 @@ function extractMentionedUsernames(value) {
 }
 
 function localOwnerMetadata(source, localRecord) {
-  const posterUsername = sourceUsername(source) || null;
-  const cameoOwnerUsernames = extractMentionedUsernames(localRecord?.prompt || "")
+  const posterUsername = normalizeUsername(localRecord?.authorUsername) || sourceUsername(source) || null;
+  const cameoOwnerUsernames = [...new Set([
+    ...(Array.isArray(localRecord?.cameoUsernames) ? localRecord.cameoUsernames : []),
+    ...extractMentionedUsernames(localRecord?.prompt || ""),
+  ])]
+    .map((username) => normalizeUsername(username))
     .filter((username) => username && username !== posterUsername);
   const cameoProfiles = cameoOwnerUsernames.map((username) => ({
     username,
@@ -324,16 +340,26 @@ function applyCustomSourceAliases(entries, sourceDirs) {
   }
 }
 
-async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache = null, onProgress = null } = {}) {
+async function attachLocalFiles(entries, lookupMap, sourceDirs, { collectInventories = false, txtRecordCache = null, onProgress = null } = {}) {
   const unmatchedLocals = new Map();
   const sourceEntries = Object.entries(sourceDirs);
   const sourceDiagnostics = new Map();
+  const sourceInventory = [];
+  const fileInventory = [];
+  const groupInventory = [];
+  const builtAt = new Date().toISOString();
 
   for (const [sourceIndex, [source, dirPath]] of sourceEntries.entries()) {
     const grouped = new Map();
     const filePaths = await walkFiles(dirPath);
     const diagnostics = createSourceDiagnostics(source, filePaths.length, dirPath);
     sourceDiagnostics.set(source, diagnostics);
+    let rootStat = null;
+    try {
+      rootStat = await fsp.stat(dirPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
 
     onProgress?.({
       phase: "local-files",
@@ -345,6 +371,7 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
     });
 
     for (const filePath of filePaths) {
+      const fileStat = await fsp.stat(filePath);
       const stem = basenameWithoutExt(filePath);
       if (!grouped.has(stem)) grouped.set(stem, {});
       const group = grouped.get(stem);
@@ -358,6 +385,22 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
         diagnostics.txtFiles += 1;
       }
       group.source = source;
+      if (collectInventories) {
+        fileInventory.push({
+          filePath,
+          source,
+          stem,
+          ext,
+          size: fileStat.size,
+          mtimeMs: fileStat.mtimeMs,
+          ctimeMs: fileStat.ctimeMs,
+          parentDir: path.dirname(filePath),
+          realPathKey: null,
+          fileId: null,
+          existsFlag: 1,
+          lastSeenAt: builtAt,
+        });
+      }
     }
     diagnostics.fileGroups = grouped.size;
 
@@ -388,13 +431,25 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
 
       const representativePath = group.txtPath || group.mediaPath || localRecord.filePath || null;
       const derivedSource = deriveNestedCreatorsSource(source, dirPath, representativePath);
-      const effectiveSource = derivedSource || localRecord.declaredSource || source;
+      const effectiveSource = derivedSource
+        || (prefersDirectorySpecificSource(source) ? source : null)
+        || localRecord.declaredSource
+        || source;
+      const secondaryDeclaredSource = localRecord.declaredSource && localRecord.declaredSource !== effectiveSource
+        ? localRecord.declaredSource
+        : null;
       localRecord.derivedSource = derivedSource;
       localRecord.effectiveSource = effectiveSource;
       group.effectiveSource = effectiveSource;
       if (localRecord.generationId) diagnostics._generationIds.add(localRecord.generationId);
       if (localRecord.postId) diagnostics._postIds.add(localRecord.postId);
       if (localRecord.taskId) diagnostics._taskIds.add(localRecord.taskId);
+      const mediaStat = group.mediaPath ? await fsp.stat(group.mediaPath) : null;
+      const txtStat = group.txtPath ? await fsp.stat(group.txtPath) : null;
+      const groupMtimeMs = Math.max(
+        mediaStat?.mtimeMs || Number.NEGATIVE_INFINITY,
+        txtStat?.mtimeMs || Number.NEGATIVE_INFINITY,
+      );
 
       processedGroups += 1;
       if (processedGroups === 1 || processedGroups === grouped.size || processedGroups % 100 === 0) {
@@ -445,6 +500,9 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
       if (matchedEntry && !matchedTie) {
         diagnostics.matchedGroups += 1;
         attachLocalVariant(matchedEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
+        if (secondaryDeclaredSource) {
+          applySourceMembership(matchedEntry, secondaryDeclaredSource);
+        }
       } else {
         diagnostics.unmatchedGroups += 1;
         const unmatchedKey = localRecord.generationId || localRecord.postId || localRecord.taskId || localRecord.stem;
@@ -453,6 +511,9 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
         const ownerMetadata = localOwnerMetadata(effectiveSource, localRecord);
         if (existingEntry) {
           attachLocalVariant(existingEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
+          if (secondaryDeclaredSource) {
+            applySourceMembership(existingEntry, secondaryDeclaredSource);
+          }
           existingEntry.date = existingEntry.date || localRecord.date;
           existingEntry.prompt = existingEntry.prompt || localRecord.prompt;
           existingEntry.ratio = existingEntry.ratio || localRecord.aspectRatio || null;
@@ -514,8 +575,54 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
           local: null,
         };
         attachLocalVariant(unmatchedEntry, effectiveSource, localAttachmentForGroup(group, localRecord));
+        if (secondaryDeclaredSource) {
+          applySourceMembership(unmatchedEntry, secondaryDeclaredSource);
+        }
         unmatchedLocals.set(unmatchedId, unmatchedEntry);
       }
+
+      if (collectInventories) {
+        groupInventory.push({
+          groupKey: makeGroupInventoryKey(source, localRecord.stem),
+          source,
+          stem: localRecord.stem,
+          mediaPath: group.mediaPath || null,
+          txtPath: group.txtPath || null,
+          groupMtimeMs: Number.isFinite(groupMtimeMs) ? groupMtimeMs : null,
+          groupHash: null,
+          declaredSource: localRecord.declaredSource || null,
+          effectiveSource,
+          generationId: localRecord.generationId || null,
+          taskId: localRecord.taskId || null,
+          postId: localRecord.postId || null,
+          date: localRecord.date || null,
+          duration: localRecord.duration || null,
+          resolution: localRecord.resolution || null,
+          aspectRatio: localRecord.aspectRatio || null,
+          liked: localRecord.liked || null,
+          authorUsername: localRecord.authorUsername || null,
+          authorDisplayName: localRecord.authorDisplayName || null,
+          cameoUsernamesJson: JSON.stringify(localRecord.cameoUsernames || []),
+          prompt: localRecord.prompt || "",
+          idTokensJson: JSON.stringify(localRecord.idTokens || []),
+          localAttachmentJson: JSON.stringify(localAttachmentForGroup(group, localRecord)),
+          lastBuiltAt: builtAt,
+        });
+      }
+    }
+
+    if (collectInventories) {
+      sourceInventory.push({
+        source,
+        rootPath: dirPath,
+        rootRealPath: await realPathKey(dirPath),
+        platform: process.platform,
+        dirMtimeMs: rootStat?.mtimeMs || null,
+        fileCount: filePaths.length,
+        groupCount: grouped.size,
+        inventoryHash: null,
+        lastScanAt: builtAt,
+      });
     }
   }
 
@@ -526,6 +633,9 @@ async function attachLocalFiles(entries, lookupMap, sourceDirs, { txtRecordCache
   applyCustomSourceAliases(entries, sourceDirs);
 
   return {
+    fileInventory: collectInventories ? fileInventory : [],
+    groupInventory: collectInventories ? groupInventory : [],
+    sourceInventory: collectInventories ? sourceInventory : [],
     sourceDiagnostics: sourceEntries
       .map(([source]) => sourceDiagnostics.get(source))
       .filter(Boolean)

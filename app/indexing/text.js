@@ -12,12 +12,13 @@ const TEXT_DECODERS = [
   { name: "utf-8", decoder: new TextDecoder("utf-8", { fatal: false }) },
   { name: "shift_jis", decoder: new TextDecoder("shift_jis", { fatal: false }) },
 ];
-const TXT_RECORD_CACHE_VERSION = 2;
+const TXT_RECORD_CACHE_VERSION = 3;
 
 function cloneTxtRecord(record) {
   if (!record) return null;
   return {
     ...record,
+    cameoUsernames: Array.isArray(record.cameoUsernames) ? [...record.cameoUsernames] : [],
     idTokens: Array.isArray(record.idTokens) ? [...record.idTokens] : [],
   };
 }
@@ -105,16 +106,43 @@ function createTxtRecordCache(cachePath) {
     state.dirty = false;
   }
 
+  async function snapshot() {
+    if (!state.enabled) return [];
+    await ensureLoaded();
+    return [...state.entries.entries()].map(([filePath, entry]) => ({
+      filePath,
+      mtimeMs: entry.mtimeMs,
+      size: entry.size,
+      record: cloneTxtRecord(entry.record),
+    }));
+  }
+
   return {
     get,
     persist,
     set,
+    snapshot,
   };
 }
 
 function likelyBrokenText(value) {
   if (!value) return false;
   return /�|ƒ|„|ں|پ~/.test(value);
+}
+
+function normalizeUsername(value) {
+  if (!value) return "";
+  return String(value).trim().replace(/^@+/, "").toLowerCase();
+}
+
+function extractMetadataUsernames(value) {
+  const matches = new Set();
+  const text = String(value || "");
+  for (const match of text.matchAll(/@([a-z0-9._-]+)/gi)) {
+    const username = normalizeUsername(match[1]);
+    if (username) matches.add(username);
+  }
+  return [...matches];
 }
 
 function scoreDecodedText(value) {
@@ -183,6 +211,9 @@ async function parseTxtRecord(filePath, sourceDirName, txtRecordCache = null) {
     resolution: metadata.Resolution || null,
     aspectRatio: metadata["Aspect ratio"] || null,
     liked: metadata.Liked || null,
+    authorUsername: extractMetadataUsernames(metadata.Author || "")[0] || null,
+    authorDisplayName: metadata["Display Name"] || null,
+    cameoUsernames: extractMetadataUsernames(metadata.Cameos || ""),
     prompt,
     encoding,
     stem,

@@ -209,7 +209,7 @@ function userInlineMarkup(label, url) {
 
 function userSearchButtonMarkup(label, url, query, detailText = "", className = "") {
   const normalizedQuery = String(query || "").trim().replace(/^@+/, "");
-  const searchQuery = normalizedQuery ? `@${normalizedQuery}` : "";
+  const searchQuery = normalizedQuery ? `"@${normalizedQuery}"` : "";
   return `
     <button
       type="button"
@@ -228,7 +228,7 @@ function userSearchButtonMarkup(label, url, query, detailText = "", className = 
 
 function textSearchButtonMarkup(label, query, className = "") {
   const normalizedQuery = String(query || "").trim().replace(/^@+/, "");
-  const searchQuery = normalizedQuery ? `@${normalizedQuery}` : "";
+  const searchQuery = normalizedQuery ? `"@${normalizedQuery}"` : "";
   return `
     <button
       type="button"
@@ -981,8 +981,20 @@ async function selectGalleryItem(id) {
   if (!id || id === state.selectedId) return;
   state.selectedId = id;
   updateActiveCard();
+  resetDetailScrollPosition();
   await viewer.renderDetail();
   viewer.persistViewState();
+}
+
+function resetDetailScrollPosition() {
+  if (els.detailSection) {
+    els.detailSection.scrollTop = 0;
+    els.detailSection.scrollLeft = 0;
+  }
+  if (els.detail) {
+    els.detail.scrollTop = 0;
+    els.detail.scrollLeft = 0;
+  }
 }
 
 async function focusAndSelectButton(button) {

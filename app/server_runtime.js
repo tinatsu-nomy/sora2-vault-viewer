@@ -16,9 +16,10 @@ const fsp = fs.promises;
 
 const DEFAULT_PORT = Number(process.env.PORT || 3210);
 const MAX_PORT_ATTEMPTS = 20;
-const SQLITE_SCHEMA_VERSION = "7";
+const SQLITE_SCHEMA_VERSION = "11";
 const BIND_HOST = process.env.SORA_BIND_HOST || "127.0.0.1";
 const ENABLE_SQLITE_CACHE = process.env.SORA_ENABLE_SQLITE_CACHE !== "0";
+const ENABLE_INCREMENTAL_BASELINE = process.env.SORA_INCREMENTAL_BASELINE === "1";
 const SQLITE_RENEW_ON_START = process.env.SORA_SQLITE_RENEW_ON_START === "1";
 const DEBUG_MODE = process.env.SORA_VIEWER_DEBUG === "1";
 const ROOT = process.env.SORA_VIEWER_ROOT
@@ -227,6 +228,7 @@ const indexState = createIndexState({
       unit: "source",
     });
     const builtIndex = await buildIndex({
+      collectInventories: ENABLE_INCREMENTAL_BASELINE,
       dataDir: DATA_DIR,
       sourceDirs,
       databaseStatus: store.getStatus(),

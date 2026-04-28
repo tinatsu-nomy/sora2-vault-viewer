@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { classifyDirEntry } = require("../fs-utils");
-const { extractIdTokens } = require("./common");
+const { extractIdTokens, pickPreferredSortTimestamp } = require("./common");
 
 const fsp = fs.promises;
 const HEADER_SEARCH_LIMIT_CHARS = 16 * 1024 * 1024;
@@ -102,6 +102,7 @@ function parseManifestDescriptor(raw, manifestPath) {
 }
 
 async function readManifestDescriptor(manifestPath) {
+  const stat = await fsp.stat(manifestPath);
   const stream = fs.createReadStream(manifestPath, {
     encoding: "utf8",
     highWaterMark: STREAM_CHUNK_SIZE,
@@ -114,7 +115,11 @@ async function readManifestDescriptor(manifestPath) {
     if (itemsKey) {
       const descriptorJson = `${headerBuffer.slice(0, itemsKey.keyIndex)}"items":[]}`;
       const raw = JSON.parse(descriptorJson);
-      return parseManifestDescriptor(raw, manifestPath);
+      return {
+        ...parseManifestDescriptor(raw, manifestPath),
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+      };
     }
 
     if (headerBuffer.length > HEADER_SEARCH_LIMIT_CHARS) {
@@ -378,6 +383,38 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
   const ownerUsernames = [posterUsername, ...uniqueCameoOwnerUsernames].filter(Boolean);
   const uniqueOwnerUsernames = [...new Set(ownerUsernames)];
   const idTokens = new Set();
+  const updatedAt = item?.updated_at
+    ?? item?.updatedAt
+    ?? item?._raw?.updated_at
+    ?? item?._raw?.updatedAt
+    ?? post?.updated_at
+    ?? post?.updatedAt
+    ?? attachment?.updated_at
+    ?? attachment?.updatedAt
+    ?? null;
+  const postedAt = item?.posted_at
+    ?? item?.postedAt
+    ?? item?._raw?.posted_at
+    ?? item?._raw?.postedAt
+    ?? post?.posted_at
+    ?? post?.postedAt
+    ?? attachment?.posted_at
+    ?? attachment?.postedAt
+    ?? null;
+  const createdAt = item?._created_at
+    ?? item?.created_at
+    ?? item?.createdAt
+    ?? item?._raw?._created_at
+    ?? item?._raw?.created_at
+    ?? item?._raw?.createdAt
+    ?? post?._created_at
+    ?? post?.created_at
+    ?? post?.createdAt
+    ?? attachment?._created_at
+    ?? attachment?.created_at
+    ?? attachment?.createdAt
+    ?? null;
+  const sortTimestampMs = pickPreferredSortTimestamp(updatedAt, postedAt, createdAt, item?.date || null);
 
   for (const value of [
     item.genId,
@@ -402,6 +439,10 @@ function parseManifestItem(item, manifestPath, exportedAt, itemIndex) {
     sourceMemberships: source === "v2_user" ? [] : [source],
     manifestSources: [source],
     date: item.date || null,
+    updatedAt,
+    postedAt,
+    createdAt,
+    sortTimestampMs,
     prompt: item.prompt || item?._raw?.post?.text || item?._raw?.prompt || "",
     manifestExportedAt: exportedAt,
     manifestFile: manifestPath,
